@@ -1,1 +1,13 @@
 .pio
+.vscode
+
+include/secrets.h
+include/network_config.h
+
+dashboard/venv/
+dashboard/config.py
+dashboard/__pycache__/
+
+CMakeLists.txt
+src/CMakeLists.txt
+sdkconfig.*

@@ -759,6 +759,13 @@ Ordem pensada para que cada etapa seja testável sozinha antes da seguinte depen
    de extremos, a persistência em NVS e o modo degradado de "não calibrado". O custo
    é a quantização da posição, discutida na seção 5.1.
 
+   **Achado de bancada:** os dois lados são montados espelhados no chassi, então a
+   mesma polaridade elétrica gira os motores em sentidos opostos em relação à frente
+   do robô — com comando positivo, o lado esquerdo ia para trás. Compensado por
+   `MOTOR_L_REVERSED` e `MOTOR_R_REVERSED`, aplicadas no `MotorDriver`. A correção
+   ficou na configuração e não trocando `MOTOR_L_IN1` com `MOTOR_L_IN2` no mapa de
+   pinos, que precisa continuar descrevendo a fiação real.
+
    Pendente de bancada: conferir que `rateHz` no `test_imu` fica próximo dos 200 Hz
    configurados, o que é a prova de que a interrupção de data-ready está de fato
    chegando; e conferir no `test_ir` que o limiar de 4000 cai numa folga clara entre

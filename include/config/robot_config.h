@@ -104,6 +104,28 @@ constexpr float MAX_SPEED  = 0.95f;  /**< Teto de saída para cada lado. */
 constexpr float MOTOR_DEADZONE = 0.65f;
 
 /**
+ * @brief Inversão do sentido de rotação de cada lado.
+ *
+ * Os dois lados são montados espelhados no chassi, então a mesma polaridade
+ * elétrica gira os motores em sentidos opostos em relação à frente do robô.
+ * Medido na bancada com test_motors: com comando positivo, o lado esquerdo
+ * girava para trás enquanto o direito girava para frente.
+ *
+ * A correção fica aqui, e não trocando MOTOR_L_IN1 com MOTOR_L_IN2 em
+ * board_pins.h, porque o mapa de pinos precisa continuar descrevendo a fiação
+ * de verdade — trocar lá esconderia o espelhamento e faria qualquer conferência
+ * futura com o multímetro parecer errada.
+ *
+ * Com estas flags corretas, velocidade positiva significa **robô para frente**
+ * nos dois lados, que é a convenção que a camada de controle assume.
+ *
+ * As duas flags existem, e não só a do lado invertido, para que o mapa fique
+ * explícito: se a fiação for refeita, é um booleano de cada lado.
+ */
+constexpr bool MOTOR_L_REVERSED = true;
+constexpr bool MOTOR_R_REVERSED = false;
+
+/**
  * @brief Fator de compensação do descasamento entre os lados, de -1 a 1.
  *
  * Positivo favorece o lado direito. Verificado na bancada na etapa 2: não há
@@ -122,7 +144,7 @@ constexpr float MOTOR_TRIM = 0.0f;
  * incômoda sem sacrificar torque na partida, que é o que importa com uma zona
  * morta tão alta.
  */
-constexpr uint32_t MOTOR_PWM_FREQ_HZ = 5000;
+constexpr uint32_t MOTOR_PWM_FREQ_HZ = 1000;
 
 /**
  * @brief Resolução do PWM, em bits.

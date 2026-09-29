@@ -10,7 +10,10 @@
  *
  * O que ele responde:
  *   1. Qual lado físico responde a qual canal do driver;
- *   2. Se o sentido de rotação bate com o esperado em cada lado;
+ *   2. Se as flags cfg::MOTOR_L_REVERSED e cfg::MOTOR_R_REVERSED estão certas:
+ *      no passo "Ambos, frente" as rodas dos dois lados precisam girar no
+ *      sentido de levar o robô para frente. Se um lado for para trás, é a flag
+ *      daquele lado que está errada;
  *   3. Se a compensação de zona morta está correta — na varredura em degraus, a
  *      roda deve sair da inércia nos primeiros degraus. Se só girar perto de
  *      0,6, a compensação não está sendo aplicada ou cfg::MOTOR_DEADZONE está
@@ -96,6 +99,9 @@ void testMotorsSetup()
                  (unsigned long)cfg::MOTOR_PWM_FREQ_HZ,
                  cfg::MOTOR_PWM_RESOLUTION_BITS,
                  cfg::MOTOR_DEADZONE, cfg::MOTOR_TRIM);
+   Serial.printf("Inversao (chassi espelhado): esquerda=%s direita=%s\n",
+                 cfg::MOTOR_L_REVERSED ? "sim" : "nao",
+                 cfg::MOTOR_R_REVERSED ? "sim" : "nao");
    Serial.println("ATENCAO: manter o robo suspenso, com as rodas livres.");
 
    /* Prova a trava de segurança antes de qualquer outra coisa: com o driver

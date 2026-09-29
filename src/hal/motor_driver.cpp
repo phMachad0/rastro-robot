@@ -123,7 +123,8 @@ uint32_t MotorDriver::speedToDuty(float speed) const
    return (uint32_t)(clampf(duty, 0.0f, 1.0f) * DUTY_MAX);
 }
 
-void MotorDriver::applySide(uint8_t channel, uint8_t in_a, uint8_t in_b, float speed)
+void MotorDriver::applySide(uint8_t channel, uint8_t in_a, uint8_t in_b, float speed,
+                            bool reversed)
 {
    const uint32_t duty = speedToDuty(speed);
 
@@ -135,7 +136,9 @@ void MotorDriver::applySide(uint8_t channel, uint8_t in_a, uint8_t in_b, float s
       return;
    }
 
-   const bool forward = speed > 0.0f;
+   /* XOR entre o sinal do comando e a inversão do lado: é o que traduz
+      "positivo = frente do robô" para a polaridade que aquele lado precisa. */
+   const bool forward = (speed > 0.0f) != reversed;
 
    digitalWrite(in_a, forward ? HIGH : LOW);
    digitalWrite(in_b, forward ? LOW : HIGH);
@@ -160,6 +163,8 @@ void MotorDriver::setSpeed(float left, float right)
    applied_left_  = clampf(left, -cfg::MAX_SPEED, cfg::MAX_SPEED);
    applied_right_ = clampf(right, -cfg::MAX_SPEED, cfg::MAX_SPEED);
 
-   applySide(LEDC_CH_LEFT, pins::MOTOR_L_IN1, pins::MOTOR_L_IN2, applied_left_);
-   applySide(LEDC_CH_RIGHT, pins::MOTOR_R_IN3, pins::MOTOR_R_IN4, applied_right_);
+   applySide(LEDC_CH_LEFT, pins::MOTOR_L_IN1, pins::MOTOR_L_IN2, applied_left_,
+             cfg::MOTOR_L_REVERSED);
+   applySide(LEDC_CH_RIGHT, pins::MOTOR_R_IN3, pins::MOTOR_R_IN4, applied_right_,
+             cfg::MOTOR_R_REVERSED);
 }

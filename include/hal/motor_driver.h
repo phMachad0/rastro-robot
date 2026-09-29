@@ -8,7 +8,9 @@
  * motores.
  *
  * Quem chama trabalha em **velocidade efetiva**, no intervalo [-1, 1]: -1 é ré
- * a toda velocidade, 0 é parado, +1 é frente a toda velocidade. A conversão
+ * a toda velocidade, 0 é parado, +1 é frente a toda velocidade. "Frente" é a
+ * frente do robô nos dois lados — o espelhamento mecânico do chassi é
+ * compensado por cfg::MOTOR_L_REVERSED e cfg::MOTOR_R_REVERSED. A conversão
  * para duty de PWM, a compensação da zona morta e o trim entre os lados ficam
  * aqui dentro. A camada de controle não sabe que zona morta existe.
  *
@@ -96,8 +98,14 @@ class MotorDriver {
    /** @brief Converte velocidade efetiva em duty de PWM, compensando a zona morta. */
    uint32_t speedToDuty(float speed) const;
 
-   /** @brief Aplica velocidade a um lado, já saturada e com trim. */
-   void applySide(uint8_t channel, uint8_t in_a, uint8_t in_b, float speed);
+   /**
+    * @brief Aplica velocidade a um lado, já saturada e com trim.
+    *
+    * @param reversed true se o lado é montado espelhado e precisa ter o sentido
+    *                 invertido para que velocidade positiva seja frente do robô.
+    */
+   void applySide(uint8_t channel, uint8_t in_a, uint8_t in_b, float speed,
+                  bool reversed);
 
    bool  armed_ = false;
    float trim_ = 0.0f;

@@ -569,7 +569,6 @@ build_src_filter = -<*> +<main.cpp> +<test/test_motors.cpp>
 
 [env:test_ir]
 build_flags = ${env.build_flags} -D APP_TARGET_TEST_IR
-monitor_filters = direct
 build_src_filter = -<*> +<main.cpp> +<test/test_ir.cpp>
 
 ; ... idem para test_led, test_imu, test_wifi e test_control
@@ -603,21 +602,24 @@ pio run -e test_ir -t upload && pio device monitor -e test_ir
 |----------|----------------|-----------------|
 | `test_led` | GPIO básico, prova que a placa grava e roda | LED da placa |
 | `test_motors` | LEDC PWM, sentido de rotação, faixa útil de duty, e **qual lado é qual** | Serial Monitor + observação |
-| `test_ir` | 6 canais ADC1, calibração, cálculo de posição | Gráfico de barras ANSI (já existe) + Serial Plotter |
+| `test_ir` | 6 canais ADC1, calibração, cálculo de posição | Serial Plotter (S0..S5) |
 | `test_imu` | I2C, **interrupção de data-ready**, bias, taxa efetiva em Hz | Serial Plotter (`gz`, `heading`) |
 | `test_wifi` | conexão STA, fallback AP, mDNS, WebSocket com telemetria sintética | Navegador + Serial Monitor |
 | `test_control` | malha fechada com motores **desabilitados**: imprime a ação do PID sem mover o robô | Serial Plotter (erro, `u`, termos) |
 
-### 8.3 Formatos de saída serial
+### 8.3 Formato de saída serial
 
-Duas saídas, escolhidas por `#define` dentro de cada teste:
+Formato único para todos os testes que emitem dados contínuos: **Serial Plotter**
+(Arduino IDE ou a extensão Teleplot do VSCode), com `rótulo:valor` separado por
+tabulação e uma linha por amostra, como em:
 
-- **Serial Plotter** (Arduino IDE / extensão Teleplot do VSCode): `rótulo:valor` separado
-  por tabulação, uma linha por amostra. É o formato que o `testSensorIR.cpp` já
-  implementa em `printPlotter()`.
-- **Gráfico ANSI no terminal**: redesenho no mesmo lugar, como `printBarChart()` já faz.
-  Exige `monitor_filters = direct` no ambiente, senão os códigos de escape aparecem
-  como lixo — está documentado no cabeçalho do arquivo atual e deve continuar.
+```
+S0:412	S1:398	S2:2910	S3:3005	S4:401	S5:388
+```
+
+Um formato só, e não dois, para que qualquer teste seja aberto no mesmo
+visualizador sem reconfigurar o monitor. Os testes que apenas relatam progresso,
+como `test_motors`, seguem imprimindo texto corrido.
 
 **Regra de ouro:** nenhum `Serial.print` dentro de ISR, e nenhum em `TaskControl`.
 No firmware completo, todo log passa por `TaskTelemetry`. O `SerialMutex.h` que já

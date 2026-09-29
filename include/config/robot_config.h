@@ -72,6 +72,15 @@ constexpr uint16_t LINE_POSITION_CENTER = 2500;
 /** @brief Tempo sem linha após o qual o supervisor leva o robô para FAULT. */
 constexpr uint32_t LINE_LOST_TIMEOUT_MS = 400;
 
+/**
+ * @brief Fator aplicado à velocidade base durante a busca por linha perdida.
+ *
+ * O robô continua virando para o lado em que a linha sumiu, mas mais devagar:
+ * mais lento significa mais tempo de busca dentro do mesmo LINE_LOST_TIMEOUT_MS
+ * e menos chance de se afastar de vez da pista.
+ */
+constexpr float LINE_LOST_SPEED_FACTOR = 0.6f;
+
 /*****************************************
  * Motores
  *****************************************/
@@ -156,6 +165,47 @@ constexpr uint32_t MOTOR_PWM_FREQ_HZ = 1000;
 constexpr uint8_t MOTOR_PWM_RESOLUTION_BITS = 10;
 
 /*****************************************
+ * Normalização dos sinais de entrada do controle
+ *
+ * Todos os ganhos do controlador são **adimensionais** e agem sobre sinais
+ * normalizados em [-1, 1]. Sem isso os ganhos ficariam em unidades
+ * incomparáveis entre si — Kp em "velocidade por unidade de posição de array" e
+ * Kg em "velocidade por grau por segundo" —, os números não diriam nada a quem
+ * sintoniza, e os sliders do dashboard não teriam faixa sensata.
+ *****************************************/
+
+/**
+ * @brief Divisor que normaliza o erro de posição para [-1, 1].
+ *
+ * O erro cru vai de -2500 a +2500 (meia faixa do array), então o divisor é a
+ * própria meia faixa. Erro normalizado de ±1 significa linha na extremidade.
+ */
+constexpr float LINE_ERROR_SCALE = (float)LINE_POSITION_CENTER;
+
+/**
+ * @brief Taxa angular, em °/s, que corresponde a amortecimento normalizado de 1.
+ *
+ * Não é o fundo de escala do sensor (±500 °/s), mas a ordem de grandeza da
+ * guinada em curva normal do robô. Normalizar pelo fundo de escala deixaria o
+ * termo de amortecimento sempre minúsculo e Kg teria que ser enorme para
+ * compensar, o que é ruim de sintonizar.
+ */
+constexpr float GYRO_RATE_REFERENCE = 300.0f;
+
+/**
+ * @brief Inversão do sinal da taxa de guinada.
+ *
+ * Depende de como o MPU-6050 está orientado no chassi. Com o sinal errado o
+ * termo de amortecimento deixa de ser realimentação negativa e passa a ser
+ * **positiva**: em vez de frear a rotação, ela é reforçada, e o robô entra em
+ * oscilação crescente até sair da pista.
+ *
+ * @warning Conferir no test_control antes de ligar os motores: girando o robô à
+ *          mão no sentido horário, `yawRate` precisa sair positivo.
+ */
+constexpr bool GYRO_Z_REVERSED = false;
+
+/*****************************************
  * Ganhos do controlador — regime de reta
  *
  * Em reta o robô anda mais rápido com ganho proporcional menor, e o
@@ -172,13 +222,50 @@ constexpr float KG_STRAIGHT = 0.35f;  /**< Amortecimento pela taxa angular. */
  * Ganhos do controlador — regime de curva
  *****************************************/
 
+/**
+ * @brief Velocidade base em curva.
+ *
+ * Menor que BASE_SPEED, que vale para a reta. O TrackClassifier interpola entre
+ * as duas junto com os ganhos, para que a transição de regime não dê degrau de
+ * aceleração.
+ */
+constexpr float BASE_SPEED_CURVE = 0.38f;
+
 constexpr float KP_CURVE = 1.10f;
 constexpr float KI_CURVE = 0.00f;
 constexpr float KD_CURVE = 0.05f;
 constexpr float KG_CURVE = 0.15f;
 
-/** @brief Teto do integrador, para evitar windup quando a saída satura. */
-constexpr float PID_INTEGRAL_LIMIT = 500.0f;
+/**
+ * @brief Teto do integrador, em unidades de erro normalizado vezes segundo.
+ *
+ * Com o erro normalizado em [-1, 1], um segundo de erro máximo acumula 1.0.
+ * O teto de 2.0 dá margem para a integral corrigir uma tendência persistente
+ * sem que ela domine a ação nos primeiros instantes de uma curva longa.
+ */
+constexpr float PID_INTEGRAL_LIMIT = 2.0f;
+
+/**
+ * @brief Limite da ação diferencial, em unidades de velocidade.
+ *
+ * 1.0 permite que a ação chegue a inverter um lado, que é o necessário para
+ * curva fechada. Também é o limite usado pelo anti-windup para decidir que a
+ * saída saturou.
+ */
+constexpr float PID_OUTPUT_LIMIT = 1.0f;
+
+/**
+ * @brief Tamanho da janela do termo derivativo, em amostras.
+ *
+ * A derivada é calculada sobre a diferença ao longo da janela inteira, e não
+ * entre amostras consecutivas. Isso importa porque a posição da linha é
+ * quantizada em passos de 500 (ver seção 5.1 da arquitetura): a diferença entre
+ * duas amostras vizinhas é zero quase sempre e dá um salto enorme quando muda,
+ * o que a derivada ponto a ponto transformaria em picos inúteis.
+ *
+ * A 250 Hz, 20 amostras são 80 ms de janela.
+ */
+constexpr uint8_t PID_DERIVATIVE_WINDOW = 20;
 
 /*****************************************
  * Classificador reta × curva

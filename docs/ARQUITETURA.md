@@ -117,10 +117,10 @@ include/
     imu.h               // wrapper do MPU6050 + ISR de data-ready          [etapa 2]
     status_led.h
   control/
-    pid_algorithm.h     // JÁ EXISTE — migra para dt + anti-windup    [etapa 3]
-    line_follower.h     // PID de posição + saturação + mixagem diferencial
-    gyro_damper.h       // termo de amortecimento por taxa angular (RF06)
-    track_classifier.h  // reta × curva, ganhos adaptativos
+    pid_algorithm.h     // PID sobre erro, com dt e anti-windup        [etapa 3]
+    line_follower.h     // compõe PID + damper + classificador         [etapa 3]
+    gyro_damper.h       // amortecimento por taxa angular (RF06)       [etapa 3]
+    track_classifier.h  // reta × curva, ganhos interpolados           [etapa 3]
     mark_detector.h     // RF02 — stub desativado
   app/
     entry_points.h      // despacho APP_TARGET_* → appSetup/appLoop     [etapa 1]
@@ -141,6 +141,8 @@ include/
 src/
   <espelha include/>
   main.cpp              // só chama appSetup/appLoop                    [etapa 1]
+test/
+  host/                 // verificação de control/ no PC, sob ASan/UBSan [etapa 3]
 data/
   index.html            // dashboard servido do LittleFS
 docs/
@@ -309,9 +311,25 @@ Reaproveita a classe `PidAlgorithm` existente, com três ajustes necessários:
   da taxa e permite mudar a taxa sem reajustar tudo.
 - **Anti-windup.** Saturar o integrador e congelá-lo quando a saída está saturada.
   Sem isso, o robô que perde a linha numa curva acumula integral e sai girando.
-- **Bug a corrigir:** o construtor em [pid_algorithm.cpp:27](../src/pid_algorithm.cpp:27)
-  zera `last_error[i]` para `i < DERIV_AUX_MAX + 1`, mas o array tem exatamente
-  `DERIV_AUX_MAX` posições — é uma escrita fora dos limites. Corrigir na migração.
+- **Bugs corrigidos na migração.** Eram **dois** estouros de array, não um. O
+  construtor zerava `last_error[i]` para `i < DERIV_AUX_MAX + 1` num array de
+  `DERIV_AUX_MAX` posições — escrita fora dos limites. E o cálculo da derivada lia
+  `last_error[deriv_aux + 1]` sob a condição `deriv_aux < DERIV_AUX_MAX`, que é
+  sempre verdadeira porque `deriv_aux` já vem reduzido módulo o tamanho: com
+  `deriv_aux == 19` a leitura caía em `last_error[20]`. Isso também tornava o ramo
+  `else` código morto. O índice agora é sempre reduzido módulo o tamanho da janela.
+
+- **Erro em vez de setpoint.** A classe passou a receber o erro diretamente, em vez de
+  um par setpoint/medida. O `IrArray` já entrega o erro com sinal definido, e manter um
+  setpoint interno criaria um segundo lugar onde a convenção de sinal pode ser
+  invertida por engano — que é a forma mais comum de um seguidor de linha corrigir para
+  o lado errado.
+
+- **Derivada de janela longa, mantida de propósito.** A intenção da versão original era
+  derivar contra uma amostra antiga, não contra a anterior. Com a posição quantizada em
+  passos de 500 (seção 5.1) isso é o certo: a diferença entre amostras vizinhas é zero
+  quase sempre e dá um salto enorme quando muda. A janela é de
+  `PID_DERIVATIVE_WINDOW` amostras, e a divisão é pelo tempo que ela cobre de fato.
 
 A saída do PID é a **ação diferencial** `u`, e a mixagem para os dois lados é:
 
@@ -320,8 +338,25 @@ left  = baseSpeed + u
 right = baseSpeed - u
 ```
 
-com saturação simétrica que preserva a diferença (se um lado satura, o outro é
-reduzido na mesma medida, em vez de cortar a curva).
+com saturação simétrica que preserva a diferença: se um lado passa do limite, **os
+dois** são deslocados na mesma medida, sacrificando velocidade para manter a curva que
+o controle pediu. Cortar cada lado independentemente reduziria a diferença, que é
+exatamente a informação de controle.
+
+**Convenção de sinal**, o ponto onde um seguidor de linha costuma fugir da linha em vez
+de voltar para ela:
+
+| Situação | `line_error` | ação `u` | efeito |
+|---|---|---|---|
+| Linha à direita do array (robô à esquerda dela) | positivo | positivo | esquerda acelera, robô vira à direita |
+| Linha à esquerda do array | negativo | negativo | direita acelera, robô vira à esquerda |
+
+**Normalização dos sinais.** Todos os ganhos são adimensionais e agem sobre sinais em
+`[-1, 1]`: o erro de posição é dividido por `LINE_ERROR_SCALE` (2500, a meia faixa do
+array) e a taxa angular por `GYRO_RATE_REFERENCE` (300 °/s). Sem isso, `Kp` estaria em
+"velocidade por unidade de posição de array" e `Kg` em "velocidade por grau por
+segundo" — grandezas incomparáveis, números que não dizem nada a quem sintoniza e
+sliders de dashboard sem faixa sensata.
 
 ### 5.3 Amortecimento por giroscópio — RF06
 
@@ -358,16 +393,28 @@ Pré-processamento obrigatório do `ωz`:
 Um seguidor de linha com ganho único é ou lento na reta ou instável na curva. Com o
 giroscópio dá para saber em qual dos dois regimes o robô está e trocar os parâmetros.
 
-O classificador mantém a média móvel de `|ωz|` numa janela de ~150 ms e aplica
-**histerese** (dois limiares, não um) para não ficar oscilando entre os regimes:
+O classificador mantém a média de `|ωz|` numa janela de ~150 ms e aplica **histerese**
+(dois limiares, não um) para não ficar oscilando entre os regimes:
 
 | Regime | Condição | Ação |
 |--------|----------|------|
 | `STRAIGHT` | `|ωz|_méd < θ_baixo` por N ciclos | sobe `baseSpeed`, reduz `Kp`, aumenta `Kg` |
 | `CURVE` | `|ωz|_méd > θ_alto` | reduz `baseSpeed`, aumenta `Kp`, reduz `Kg` |
 
-A transição entre os conjuntos de ganhos é **interpolada** ao longo de alguns ciclos,
-não abrupta — degrau de ganho em malha fechada gera solavanco.
+A média é um **filtro exponencial** com constante de tempo de `REGIME_WINDOW_MS`, e não
+uma média móvel com fila. Para esta finalidade os dois se comportam praticamente igual,
+e o exponencial não precisa de buffer dimensionado pela taxa de controle: mudar
+`CONTROL_HZ` não altera a janela de tempo efetiva, que é o que se quer especificar.
+
+A transição entre os conjuntos de ganhos é **interpolada** ao longo de
+`REGIME_BLEND_MS`, não abrupta — degrau de ganho em malha fechada gera solavanco. O
+classificador expõe um fator `blend` de 0 (reta) a 1 (curva) que caminha em direção ao
+regime alvo, e os ganhos, junto com a velocidade base, são interpolados linearmente
+entre os dois conjuntos usando esse fator.
+
+O classificador **nasce em `CURVE`**, o conjunto conservador: partir do regime de reta
+faria o robô sair acelerado antes de existir qualquer medida de `|ωz|` que justificasse
+isso.
 
 Todos os limiares e os dois conjuntos de ganhos são ajustáveis pelo dashboard em
 tempo de execução, o que torna a sintonia um processo de minutos em vez de um ciclo
@@ -616,7 +663,7 @@ pio run -e test_ir -t upload && pio device monitor -e test_ir
 | `test_ir` | 6 canais ADC1, limiar fixo, cálculo de posição | Séries `raw0`..`raw5`, `threshold`, `position` |
 | `test_imu` | I2C, **interrupção de data-ready**, bias, taxa efetiva em Hz | Séries `gyroZ`, `acc*`, `heading` |
 | `test_wifi` | conexão STA, fallback AP, mDNS, WebSocket com telemetria sintética | Navegador + painel de log |
-| `test_control` | malha fechada com motores **desabilitados**: emite a ação do PID sem mover o robô | Séries `error`, `u`, termos P/I/D |
+| `test_control` | malha fechada com o `MotorDriver` **fora do binário**: emite a ação do PID sem mover o robô | Séries `error`, `action`, `pTerm`/`iTerm`/`dTerm`, `gyroTerm`, `blend` |
 
 ### 8.3 Formato de saída serial
 
@@ -651,6 +698,30 @@ escolhendo a porta e 115200 baud.
 > ⚠️ O Teleplot abre a porta em modo exclusivo. Não dá para deixar o
 > `pio device monitor` aberto ao mesmo tempo — feche um antes de abrir o outro,
 > senão a porta aparece como ocupada e a gravação falha.
+
+### 8.4 Verificação de host
+
+A camada `control/` não depende de nada do Arduino — é matemática sobre floats. Isso
+permite compilá-la no PC e verificar o comportamento sem a placa:
+
+```bash
+./test/host/run.sh
+```
+
+Roda em cerca de dois segundos, com `AddressSanitizer`, `UndefinedBehaviorSanitizer` e
+`-fsanitize=bounds-strict`. Cobre 33 verificações: sinais e antissimetria da ação,
+derivada sobre rampa e sobre erro constante, integral escalada por `dt`, teto do
+integrador, anti-windup travando sob saturação **e** liberando quando o erro inverte,
+congelamento da ação e do integrador com a linha perdida, histerese do classificador e
+taxa de interpolação dos ganhos.
+
+O `bounds-strict` é o que detecta estouro em array membro de classe — o `AddressSanitizer`
+sozinho não pega esse caso, porque o acesso cai dentro do mesmo objeto. Foi exatamente o
+defeito da versão original do `PidAlgorithm`, e é o motivo de essa flag estar ligada.
+
+Isto complementa, e não substitui, o `test_control` na placa: o host verifica a
+matemática, a placa verifica a integração com os sensores reais e a orientação física
+dos sinais.
 
 **Regra de ouro:** nenhum `Serial.print` dentro de ISR, e nenhum em `TaskControl`.
 No firmware completo, todo log passa por `TaskTelemetry`. O `SerialMutex.h` que já
@@ -771,11 +842,30 @@ Ordem pensada para que cada etapa seja testável sozinha antes da seguinte depen
    chegando; e conferir no `test_ir` que o limiar de 4000 cai numa folga clara entre
    os dois patamares de leitura.
 
-**Etapa 3 — Controle**
-9. Migrar `PidAlgorithm` para `control/`, corrigir o bug de limite do array, adicionar `dt` e anti-windup.
-10. `LineFollower` (PID + mixagem + saturação).
-11. `GyroDamper` e `TrackClassifier`.
-12. Validar: `test_control` com motores desabilitados, conferindo os termos no plotter.
+**Etapa 3 — Controle** ✅ concluída
+9. ✅ `PidAlgorithm` migrado: **dois** estouros de array corrigidos (não um), `dt`
+   explícito, anti-windup por travamento condicional, e passou a operar sobre erro em
+   vez de setpoint/medida.
+10. ✅ `LineFollower` compondo PID, amortecimento e classificador, com mixagem de
+    saturação que preserva a diferença entre os lados e a busca por linha perdida.
+11. ✅ `GyroDamper` e `TrackClassifier` com histerese e ganhos interpolados.
+12. ✅ Validar: `test_control` reescrito com o `MotorDriver` fora do binário, mais uma
+    suíte de 33 verificações de host sob sanitizadores (`./test/host/run.sh`, seção 8.4).
+
+    **Decisão de unidades:** todos os ganhos passaram a ser adimensionais, agindo sobre
+    sinais normalizados em `[-1, 1]`. Os valores de `robot_config.h` não faziam sentido
+    dimensional antes disso — `KP_STRAIGHT = 0.60` aplicado a um erro de ±2500 daria
+    ação de ±1500 numa saída que vai de -1 a 1.
+
+    Pendente de bancada, em ordem de risco:
+
+    1. **Sinal de `GYRO_Z_REVERSED`.** Girando o robô à mão no sentido horário,
+       `yawRate` precisa sair positivo. Invertido, o amortecimento do RF06 deixa de ser
+       realimentação negativa e passa a reforçar a rotação — oscilação crescente.
+    2. **Sinal da ação.** Robô à esquerda da linha deve produzir `error` e `action`
+       positivos, com `left > right`.
+    3. **Troca de regime.** Parado, `blend` deve ir a 0; girando, a 1, com `kp` e `kg`
+       caminhando sem salto.
 
 **Etapa 4 — RTOS e aplicação**
 13. Criar as tasks, mailboxes, filas e event group da seção 4.

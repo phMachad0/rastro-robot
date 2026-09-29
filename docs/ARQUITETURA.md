@@ -112,12 +112,12 @@ include/
     robot_config.h      // ganhos, períodos, limites, velocidades      [etapa 1]
     features.h          // flags de compilação                         [etapa 1]
   hal/
-    motor_driver.h      // abstração dos 2 lados; setSpeed(left, right) em [-1..1]
-    ir_array.h          // leitura bruta, calibração, posição da linha
-    imu.h               // wrapper do MPU6050 + ISR de data-ready
+    motor_driver.h      // 2 lados; setSpeed(left,right) em [-1..1]        [etapa 2]
+    ir_array.h          // leitura bruta, calibração, posição da linha     [etapa 2]
+    imu.h               // wrapper do MPU6050 + ISR de data-ready          [etapa 2]
     status_led.h
   control/
-    pid_algorithm.h     // JÁ EXISTE — reaproveitado                    [etapa 1]
+    pid_algorithm.h     // JÁ EXISTE — migra para dt + anti-windup    [etapa 3]
     line_follower.h     // PID de posição + saturação + mixagem diferencial
     gyro_damper.h       // termo de amortecimento por taxa angular (RF06)
     track_classifier.h  // reta × curva, ganhos adaptativos
@@ -137,6 +137,7 @@ include/
   test/
     test_led.h  test_motors.h  test_imu.h  test_ir.h                    [etapa 1]
     test_wifi.h  test_control.h                                         [etapa 1]
+    teleplot.h          // formato de saída serial, header-only           [etapa 1]
 src/
   <espelha include/>
   main.cpp              // só chama appSetup/appLoop                    [etapa 1]
@@ -724,11 +725,27 @@ Ordem pensada para que cada etapa seja testável sozinha antes da seguinte depen
    Pendente de bancada: rodar `test_led` e `test_motors` na placa para confirmar
    qual lado físico responde a qual canal do driver e medir a zona morta.
 
-**Etapa 2 — HAL**
-5. `MotorDriver` sobre LEDC, com `setSpeed(left, right)` em `[-1, 1]` e trava de segurança.
-6. `IrArray` com os 6 canais de ADC1, calibração e cálculo de posição.
-7. `Imu` com interrupção de data-ready, remoção de bias e filtro.
-8. Validar: `test_ir` e `test_imu` mostrando dados coerentes no plotter.
+**Etapa 2 — HAL** ✅ concluída
+5. ✅ `MotorDriver` sobre LEDC, com `setSpeed(left, right)` em `[-1, 1]` e trava de segurança.
+6. ✅ `IrArray` com os 6 canais de ADC1, calibração e cálculo de posição.
+7. ✅ `Imu` com interrupção de data-ready, remoção de bias e filtro.
+8. ✅ Validar: os sete ambientes compilam sem warnings; `test_motors`, `test_ir` e
+   `test_imu` reescritos para exercitar a HAL pela mesma interface que o controle usará.
+
+   Dois defeitos corrigidos durante a implementação:
+
+   - **Frenagem do L298N.** `stop(BRAKE)` colocava as duas entradas de direção no
+     mesmo nível mas zerava o PWM. Com a habilitação em zero a ponte fica em alta
+     impedância e o motor gira livre — exatamente o oposto de frear. O modo de
+     frenagem agora leva o duty ao máximo.
+   - **Espera da IMU.** O laço de espera do data-ready usava `taskYIELD()`, que só
+     cede para tarefas de prioridade igual ou maior. A tarefa ociosa nunca rodaria e
+     o watchdog resetaria a placa durante a estimativa de bias, que leva ~2,5 s.
+     Trocado por `vTaskDelay(1)`.
+
+   Pendente de bancada: validar a rampa de aceleração (`MOTOR_SLEW_PER_S`) e conferir
+   que `rateHz` no `test_imu` fica próximo dos 200 Hz configurados, o que é a prova
+   de que a interrupção de data-ready está de fato chegando.
 
 **Etapa 3 — Controle**
 9. Migrar `PidAlgorithm` para `control/`, corrigir o bug de limite do array, adicionar `dt` e anti-windup.
@@ -759,17 +776,37 @@ Ordem pensada para que cada etapa seja testável sozinha antes da seguinte depen
 
 ## 12. Pendências e pontos em aberto
 
-- **Sensores das pontas.** Definir quais dois dos oito canais do QTR-8A ficam
-  desconectados. A recomendação é sacrificar as duas pontas externas e manter os seis
-  centrais equidistantes, preservando simetria em torno do eixo do robô.
-- **Frequência de PWM.** Escolher entre ~1 kHz (mais torque em baixa rotação, motor
-  audível) e ~20 kHz (silencioso, pode perder torque). Decidir com o motor na bancada
-  durante a etapa 2.
-- **Zona morta dos motores.** Medir o duty mínimo em que cada lado começa a girar e
-  compensar no `MotorDriver`; sem isso, correções pequenas do PID não produzem
-  movimento nenhum.
-- **Descasamento entre os lados.** Com dois motores por canal, é provável que um lado
-  seja mais rápido que o outro no mesmo duty. Medir e aplicar um fator de trim,
-  ajustável pelo dashboard.
+### Resolvidas na bancada (etapa 2)
+
+- ~~**Sensores das pontas.**~~ Os dois canais das pontas externas ficam desconectados,
+  mantendo os seis centrais equidistantes e simétricos em torno do eixo do robô.
+- ~~**Frequência de PWM.**~~ **5 kHz**, meio-termo entre o ~1 kHz (mais torque em baixa
+  rotação, audível) e o ~20 kHz (silencioso, perde torque). Tira o chiado da faixa mais
+  incômoda sem sacrificar torque na partida.
+- ~~**Zona morta dos motores.**~~ Medida em **0,65** e compensada no `MotorDriver`.
+- ~~**Descasamento entre os lados.**~~ Não há descasamento significativo; `MOTOR_TRIM`
+  fica em zero. O mecanismo permanece no `MotorDriver` porque o descasamento tende a
+  aparecer com o desgaste e com a queda de tensão da bateria, e aí é ajustável pelo
+  dashboard sem recompilar.
+
+> ⚠️ **A zona morta de 0,65 merece atenção.** Significa que só 35% da faixa de PWM
+> produz movimento, e é sintoma de tensão insuficiente chegando aos motores — coerente
+> com a queda de ~2,5 V do L298N alimentado a 5 V. A compensação no `MotorDriver`
+> resolve o problema de controlabilidade, mas não o de autoridade: a velocidade máxima
+> real do robô fica limitada. Se a alimentação for revista (9 V na entrada do driver via
+> PD trigger, ou troca por uma ponte de MOSFET tipo TB6612FNG, que além de não esquentar
+> elimina a queda), a zona morta cai bastante e a resolução de controle melhora junto.
+> **Remedir depois de qualquer mudança na alimentação.**
+
+### Em aberto
+
+- **Alimentação.** Powerbank com saída de 9 V via PD trigger para o driver, capacitor de
+  bulk de 1000–2200 µF nos terminais do L298N para absorver o pico de partida, e buck
+  separado para o ESP32, de forma que a queda do barramento durante a partida dos motores
+  não provoque reset. Depende da tensão nominal dos motores, ainda não confirmada.
+- **Rampa de aceleração.** `MOTOR_SLEW_PER_S` está em 4,0 (parado a toda velocidade em
+  250 ms), escolhido para espalhar no tempo o degrau de corrente que dispara a proteção
+  do powerbank. Ainda não validado na pista — se o robô ficar lerdo em curva fechada,
+  é o primeiro valor a subir.
 - **Credenciais de Wi-Fi.** Definir se ficam em `secrets.h` ignorado pelo git ou
   configuráveis por portal cativo no modo AP.

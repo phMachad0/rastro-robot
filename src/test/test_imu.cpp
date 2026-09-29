@@ -1,47 +1,38 @@
 /**
  * @file test_imu.cpp
  *
- * @brief Leitura de aceleração e taxa angular do MPU-6050 via I2C.
+ * @brief Teste do MPU-6050 através da classe Imu.
  *
- * O eixo que interessa ao controle é o Z do giroscópio: é a taxa de guinada
- * do chassi, usada para amortecer o zigue-zague em reta (RF06) e para
- * classificar o trecho da pista entre reta e curva.
+ * Valida o caminho completo que o controle vai usar: interrupção de data-ready,
+ * remoção de bias e filtro — não mais o polling cru da etapa 1.
  *
- * Fundo de escala em ±500 °/s, e não os ±250 de antes: em curva fechada com o
- * robô rápido, ±250 satura e o termo de amortecimento perde o sinal justo
- * quando ele é mais necessário.
+ * O que observar no Teleplot:
+ *   - `rateHz`: deve ficar em torno de cfg::IMU_SAMPLE_HZ. Se cair para perto
+ *     de zero, o pino de interrupção não está ligado ou a configuração do
+ *     sensor não pegou — é o teste mais direto de que a ISR está chegando.
+ *   - `gyroZ` e `gyroZraw`: com o robô imóvel devem ficar em zero. Se `gyroZraw`
+ *     tem um patamar constante e `gyroZ` não, a remoção de bias está agindo.
+ *   - Girando o robô à mão, `gyroZ` acompanha `gyroZraw` com um pequeno atraso:
+ *     é o filtro IIR.
  *
- * Visualização: Teleplot, acompanhando gyroZ enquanto o robô é girado à mão.
- * As séries do acelerômetro saem em g e as do giroscópio em deg/s, de forma que
- * o Teleplot não as misture no mesmo eixo.
- *
- * @note A interrupção de data-ready no GPIO de pins::IMU_INT, a remoção de
- *       bias e o filtro passa-baixa chegam na etapa 2, com a classe Imu. Aqui
- *       a leitura ainda é por polling.
+ * @warning O robô precisa estar parado e apoiado durante a estimativa de bias,
+ *          logo após o boot. Movê-lo nessa janela grava o movimento como zero.
  */
 
 #include "test/test_imu.h"
 
 #include <Arduino.h>
-#include <MPU6050.h>
-#include <Wire.h>
 
 #include "config/board_pins.h"
 #include "config/robot_config.h"
+#include "hal/imu.h"
 #include "test/teleplot.h"
 
 namespace {
 
-MPU6050 mpu;
+Imu imu;
 
-/** @brief Fator de escala do acelerômetro em ±2 g, em LSB por g. */
-constexpr float SCALE_ACCEL = 16384.0f;
-
-/** @brief Fator de escala do giroscópio em ±500 °/s, em LSB por °/s. */
-constexpr float SCALE_GYRO = 65.5f;
-
-constexpr uint32_t I2C_FREQ_HZ = 400000;
-constexpr uint32_t REFRESH_MS  = 50;
+bool imu_ok = false;
 
 }  // namespace
 
@@ -49,42 +40,55 @@ void testImuSetup()
 {
    Serial.begin(cfg::SERIAL_BAUD);
 
-   Wire.begin(pins::I2C_SDA, pins::I2C_SCL, I2C_FREQ_HZ);
-
    Serial.println();
    Serial.println("Inicializando MPU-6050...");
-   mpu.initialize();
 
-   if (!mpu.testConnection()) {
+   if (!imu.begin()) {
       Serial.println("ERRO: MPU-6050 nao respondeu. Conferir SDA, SCL e alimentacao.");
       return;
    }
 
-   mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_500);
-
-   Serial.println("MPU-6050 pronto.");
-   Serial.printf("I2C: SDA=GPIO%u SCL=GPIO%u | INT (etapa 2): GPIO%u\n",
+   Serial.printf("I2C: SDA=GPIO%u SCL=GPIO%u | data-ready: GPIO%u\n",
                  pins::I2C_SDA, pins::I2C_SCL, pins::IMU_INT);
-   Serial.println("Series do Teleplot: accX accY accZ (g), gyroX gyroY gyroZ (deg/s)");
+   Serial.printf("Fundo de escala +-500 deg/s, DLPF ~44 Hz, taxa alvo %lu Hz\n",
+                 (unsigned long)cfg::IMU_SAMPLE_HZ);
+
+   Serial.printf("\nEstimando bias do giroscopio (%u amostras). NAO MOVER O ROBO.\n",
+                 cfg::GYRO_BIAS_SAMPLES);
+
+   if (!imu.calibrateGyroBias()) {
+      Serial.println("ERRO: a IMU parou de entregar amostras durante a estimativa.");
+      Serial.printf("Interrupcoes recebidas: %lu. Conferir a ligacao do pino INT.\n",
+                    (unsigned long)imu.interruptCount());
+      return;
+   }
+
+   Serial.printf("Bias de gyroZ: %.3f deg/s\n", imu.gyroBiasZ());
+   Serial.println("Series do Teleplot: gyroZ, gyroZraw, accX/Y/Z, rateHz");
+
+   imu_ok = true;
 }
 
 void testImuLoop()
 {
-   int16_t ax, ay, az;
-   int16_t gx, gy, gz;
+   if (!imu_ok) {
+      delay(1000);
+      return;
+   }
 
-   mpu.getAcceleration(&ax, &ay, &az);
-   mpu.getRotation(&gx, &gy, &gz);
+   if (!imu.update()) {
+      Serial.println("AVISO: timeout esperando data-ready.");
+      return;
+   }
 
-   teleplot::send("accX", ax / SCALE_ACCEL, "g");
-   teleplot::send("accY", ay / SCALE_ACCEL, "g");
-   teleplot::send("accZ", az / SCALE_ACCEL, "g");
+   teleplot::send("accX", imu.accelX(), "g");
+   teleplot::send("accY", imu.accelY(), "g");
+   teleplot::send("accZ", imu.accelZ(), "g");
 
-   teleplot::send("gyroX", gx / SCALE_GYRO, "deg/s");
-   teleplot::send("gyroY", gy / SCALE_GYRO, "deg/s");
+   /* gyroZ é a taxa de guinada: o único canal que o controle usa. O cru vai
+      junto para dar para ver o efeito do bias e do filtro lado a lado. */
+   teleplot::send("gyroZ", imu.yawRate(), "deg/s");
+   teleplot::send("gyroZraw", imu.yawRateRaw(), "deg/s");
 
-   /* gyroZ é a taxa de guinada: o único canal que o controle usa. */
-   teleplot::send("gyroZ", gz / SCALE_GYRO, "deg/s");
-
-   delay(REFRESH_MS);
+   teleplot::send("rateHz", imu.measuredRateHz(), "Hz");
 }

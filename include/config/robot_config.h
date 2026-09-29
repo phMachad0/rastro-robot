@@ -66,6 +66,16 @@ constexpr uint32_t LINE_LOST_TIMEOUT_MS = 400;
 /** @brief Duração da varredura de calibração do array IR. */
 constexpr uint32_t IR_CALIBRATION_MS = 6000;
 
+/**
+ * @brief Amplitude mínima entre o mínimo e o máximo de um canal calibrado.
+ *
+ * Um canal cujo min e max ficaram próximos não viu contraste durante a
+ * calibração — sensor solto, mal posicionado ou varredura curta demais.
+ * Normalizar por uma amplitude minúscula amplificaria só ruído, então o canal
+ * é marcado como não calibrado e a calibração inteira é rejeitada.
+ */
+constexpr uint16_t IR_CALIBRATION_MIN_SPAN = 200;
+
 /*****************************************
  * Motores
  *****************************************/
@@ -76,23 +86,72 @@ constexpr float MAX_SPEED  = 0.95f;  /**< Teto de saída para cada lado. */
 /**
  * @brief Duty mínimo em que o motor começa a girar, de 0 a 1.
  *
- * Abaixo da zona morta o motor apenas zumbe sem se mover, e correções
- * pequenas do PID não produzem movimento nenhum. Medir na bancada na
- * etapa 2 e ajustar.
+ * Medido na bancada com test_motors. Abaixo desse duty o motor apenas zumbe
+ * sem se mover, e correções pequenas do PID não produziriam movimento nenhum.
+ *
+ * O MotorDriver compensa essa zona morta remapeando a velocidade comandada
+ * para a faixa útil:
+ *
+ *     duty = MOTOR_DEADZONE + (1 - MOTOR_DEADZONE) * |velocidade|
+ *
+ * Por isso os valores de BASE_SPEED e MAX_SPEED continuam sendo velocidade
+ * efetiva de 0 a 1, e não duty — quem chama setSpeed() não precisa saber que
+ * a zona morta existe.
+ *
+ * @warning 0.65 é um valor alto: só 35% da faixa de PWM produz movimento. Isso
+ *          é sintoma de tensão insuficiente chegando aos motores, coerente com
+ *          a queda de ~2,5 V do L298N. Se a alimentação for revista (9 V na
+ *          entrada do driver, ou troca por uma ponte de MOSFET), este valor cai
+ *          bastante e a resolução de controle melhora junto. Remedir depois de
+ *          qualquer mudança na alimentação.
  */
-constexpr float MOTOR_DEADZONE = 0.12f;
+constexpr float MOTOR_DEADZONE = 0.65f;
 
 /**
  * @brief Fator de compensação do descasamento entre os lados, de -1 a 1.
  *
- * Positivo favorece o lado direito. Com dois motores por canal é provável
- * que um lado seja mais rápido que o outro no mesmo duty. Medir na etapa 2.
+ * Positivo favorece o lado direito. Verificado na bancada na etapa 2: não há
+ * descasamento significativo entre os lados, então o fator fica em zero. O
+ * mecanismo continua no MotorDriver porque o descasamento tende a aparecer com
+ * o desgaste e com a queda de tensão da bateria, e aí é ajustável pelo
+ * dashboard sem recompilar.
  */
 constexpr float MOTOR_TRIM = 0.0f;
 
-/** @brief Frequência do PWM. A definir na bancada — ver docs, seção 12. */
-constexpr uint32_t MOTOR_PWM_FREQ_HZ = 20000;
-constexpr uint8_t  MOTOR_PWM_RESOLUTION_BITS = 10;
+/**
+ * @brief Frequência do PWM, decidida na bancada.
+ *
+ * Meio-termo entre o ~1 kHz (mais torque em baixa rotação, motor audível) e o
+ * ~20 kHz (silencioso, perde torque): a 5 kHz o chiado sai da faixa mais
+ * incômoda sem sacrificar torque na partida, que é o que importa com uma zona
+ * morta tão alta.
+ */
+constexpr uint32_t MOTOR_PWM_FREQ_HZ = 5000;
+
+/**
+ * @brief Resolução do PWM, em bits.
+ *
+ * A 5 kHz o LEDC do ESP32 (clock de 80 MHz) comporta até 13 bits. 10 bits dão
+ * 1024 passos, dos quais ~358 caem na faixa útil acima da zona morta — folga
+ * suficiente para a malha a 250 Hz.
+ */
+constexpr uint8_t MOTOR_PWM_RESOLUTION_BITS = 10;
+
+/**
+ * @brief Variação máxima de velocidade por segundo, em unidades de [0, 1].
+ *
+ * Limita a taxa de subida da saída dos motores. Com quatro motores partindo ao
+ * mesmo tempo, o degrau de corrente é o que dispara a proteção de sobrecorrente
+ * do powerbank e derruba o ESP32 junto; a rampa espalha esse pico no tempo.
+ *
+ * 4.0 significa ir de parado a toda velocidade em 250 ms — rápido o bastante
+ * para não atrapalhar a malha de controle, que trabalha com correções pequenas
+ * e contínuas, e lento o bastante para suavizar a partida.
+ *
+ * @note Ainda não validado na bancada. Se o robô ficar lerdo para responder a
+ *       curvas fechadas, este é o primeiro valor a subir.
+ */
+constexpr float MOTOR_SLEW_PER_S = 4.0f;
 
 /*****************************************
  * Ganhos do controlador — regime de reta
@@ -145,6 +204,24 @@ constexpr uint16_t GYRO_BIAS_SAMPLES = 500;
 
 /** @brief Coeficiente do filtro IIR de primeira ordem aplicado a wz, de 0 a 1. */
 constexpr float GYRO_LPF_ALPHA = 0.20f;
+
+/**
+ * @brief Largura de banda do filtro digital interno do MPU-6050.
+ *
+ * O valor corresponde a MPU6050_DLPF_BW_42 (~44 Hz no giroscópio). Filtrar no
+ * sensor, antes da amostragem, é o que evita aliasing — um IIR no firmware não
+ * consegue desfazer ruído que já entrou dobrado na amostra.
+ *
+ * Ligar o DLPF também muda a taxa base do giroscópio de 8 kHz para 1 kHz, que
+ * é a base do divisor de IMU_SAMPLE_HZ.
+ */
+constexpr uint8_t GYRO_DLPF_MODE = 3;
+
+/** @brief Taxa base do giroscópio com o DLPF ligado, usada no divisor de taxa. */
+constexpr uint32_t IMU_BASE_RATE_HZ = 1000;
+
+/** @brief Tempo máximo esperando o data-ready antes de declarar a IMU muda. */
+constexpr uint32_t IMU_TIMEOUT_MS = 100;
 
 /*****************************************
  * Política de parada e retomada — RF03 e RF04

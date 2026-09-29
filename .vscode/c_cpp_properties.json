@@ -10,6 +10,7 @@
             "includePath": [
                 "/home/pedro/Documentos/PlatformIO/Projects/rastro-robot/include",
                 "/home/pedro/Documentos/PlatformIO/Projects/rastro-robot/src",
+                "/home/pedro/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
                 "/home/pedro/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src",
                 "/home/pedro/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/newlib/platform_include",
                 "/home/pedro/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/freertos/include",
@@ -230,7 +231,6 @@
                 "/home/pedro/.platformio/packages/framework-arduinoespressif32/libraries/USB/src",
                 "/home/pedro/.platformio/packages/framework-arduinoespressif32/libraries/Update/src",
                 "/home/pedro/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src",
-                "/home/pedro/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
                 "/home/pedro/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
                 "/home/pedro/.platformio/packages/framework-arduinoespressif32/libraries/WiFiProv/src",
                 ""
@@ -240,6 +240,7 @@
                 "path": [
                     "/home/pedro/Documentos/PlatformIO/Projects/rastro-robot/include",
                     "/home/pedro/Documentos/PlatformIO/Projects/rastro-robot/src",
+                    "/home/pedro/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
                     "/home/pedro/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src",
                     "/home/pedro/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/newlib/platform_include",
                     "/home/pedro/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/freertos/include",
@@ -460,7 +461,6 @@
                     "/home/pedro/.platformio/packages/framework-arduinoespressif32/libraries/USB/src",
                     "/home/pedro/.platformio/packages/framework-arduinoespressif32/libraries/Update/src",
                     "/home/pedro/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src",
-                    "/home/pedro/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
                     "/home/pedro/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
                     "/home/pedro/.platformio/packages/framework-arduinoespressif32/libraries/WiFiProv/src",
                     ""

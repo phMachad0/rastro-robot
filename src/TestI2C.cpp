@@ -33,10 +33,6 @@
     Serial.println("End sleep...");
     
     mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_250); 
-    // if (!mpu.testConnection()) {
-    //     Serial.println("Could not find a valid MPU6050 sensor, check wiring!");
-    //     while (1);
-    // }
 
     // Configure LED pin
     pinMode(LED_BUILTIN, OUTPUT);

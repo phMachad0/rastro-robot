@@ -2,17 +2,20 @@
 #include "TestLed.h"
 #include "TestMotors.h"
 #include "TestI2C.h"
+#include "TestSensorIR.h"
 
 void setup()
 {
   // testLedSetup();
   // testMotorsSetup();
-  testI2CSetup();
+  // testI2CSetup();
+  testSensorIRSetup();
 }
 
 void loop()
 {
   // testLedLoop();
   // testMotorsLoop();
-  testI2CLoop();
+  // testI2CLoop();
+  testSensorIRLoop();
 }

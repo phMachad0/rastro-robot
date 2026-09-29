@@ -15,7 +15,10 @@
  *
  * @warning Rodar com o robô suspenso, com as rodas sem tocar a bancada.
  *
- * Visualização: Serial Monitor mais observação direta das rodas.
+ * Visualização: Teleplot. A varredura emite a série `duty`, de forma que dá
+ * para marcar no gráfico o instante em que cada roda começou a girar e ler o
+ * valor correspondente — é assim que se mede cfg::MOTOR_DEADZONE. O restante
+ * do teste é texto no painel de log.
  *
  * @note Ainda usa analogWrite. A etapa 2 substitui isto pelo MotorDriver
  *       sobre LEDC, com controle de frequência e resolução.
@@ -27,6 +30,7 @@
 
 #include "config/board_pins.h"
 #include "config/robot_config.h"
+#include "test/teleplot.h"
 
 namespace {
 
@@ -72,9 +76,12 @@ void sweepSide(const char* label, uint8_t pwm_pin, uint8_t in_a, uint8_t in_b)
 
    for (uint16_t duty = 0; duty <= PWM_MAX; duty += 15) {
       analogWrite(pwm_pin, duty);
-      Serial.printf("  duty = %3u  (%.0f%%)\n", duty, 100.0f * duty / PWM_MAX);
+      teleplot::send("duty", (int32_t)duty);
+      teleplot::send("dutyPercent", 100.0f * duty / PWM_MAX, "%");
       delay(400);
    }
+
+   teleplot::send("duty", (int32_t)0);
 
    stopSide(pwm_pin, in_a, in_b);
    delay(PAUSE_MS);

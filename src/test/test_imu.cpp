@@ -11,7 +11,9 @@
  * robô rápido, ±250 satura e o termo de amortecimento perde o sinal justo
  * quando ele é mais necessário.
  *
- * Visualização: Serial Plotter, acompanhando gz enquanto o robô é girado à mão.
+ * Visualização: Teleplot, acompanhando gyroZ enquanto o robô é girado à mão.
+ * As séries do acelerômetro saem em g e as do giroscópio em deg/s, de forma que
+ * o Teleplot não as misture no mesmo eixo.
  *
  * @note A interrupção de data-ready no GPIO de pins::IMU_INT, a remoção de
  *       bias e o filtro passa-baixa chegam na etapa 2, com a classe Imu. Aqui
@@ -26,6 +28,7 @@
 
 #include "config/board_pins.h"
 #include "config/robot_config.h"
+#include "test/teleplot.h"
 
 namespace {
 
@@ -62,7 +65,7 @@ void testImuSetup()
    Serial.println("MPU-6050 pronto.");
    Serial.printf("I2C: SDA=GPIO%u SCL=GPIO%u | INT (etapa 2): GPIO%u\n",
                  pins::I2C_SDA, pins::I2C_SCL, pins::IMU_INT);
-   Serial.println("Formato do Serial Plotter: accX accY accZ gyroX gyroY gyroZ");
+   Serial.println("Series do Teleplot: accX accY accZ (g), gyroX gyroY gyroZ (deg/s)");
 }
 
 void testImuLoop()
@@ -73,12 +76,15 @@ void testImuLoop()
    mpu.getAcceleration(&ax, &ay, &az);
    mpu.getRotation(&gx, &gy, &gz);
 
-   /* Formato do Serial Plotter: rótulo:valor separado por tabulação, uma
-      amostra por linha. gyroZ é o canal que importa para o controle. */
-   Serial.printf("accX:%.2f\taccY:%.2f\taccZ:%.2f\t"
-                 "gyroX:%.1f\tgyroY:%.1f\tgyroZ:%.1f\n",
-                 ax / SCALE_ACCEL, ay / SCALE_ACCEL, az / SCALE_ACCEL,
-                 gx / SCALE_GYRO, gy / SCALE_GYRO, gz / SCALE_GYRO);
+   teleplot::send("accX", ax / SCALE_ACCEL, "g");
+   teleplot::send("accY", ay / SCALE_ACCEL, "g");
+   teleplot::send("accZ", az / SCALE_ACCEL, "g");
+
+   teleplot::send("gyroX", gx / SCALE_GYRO, "deg/s");
+   teleplot::send("gyroY", gy / SCALE_GYRO, "deg/s");
+
+   /* gyroZ é a taxa de guinada: o único canal que o controle usa. */
+   teleplot::send("gyroZ", gz / SCALE_GYRO, "deg/s");
 
    delay(REFRESH_MS);
 }

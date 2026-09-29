@@ -7,7 +7,9 @@
  * prova que a placa está sendo gravada e que o firmware está executando, antes
  * de suspeitar de qualquer periférico.
  *
- * Visualização: o próprio LED.
+ * Visualização: o próprio LED. O estado também sai como a série `led` do
+ * Teleplot, o que faz deste teste a forma mais rápida de confirmar que a
+ * extensão está conectada na porta certa antes de depurar um teste de verdade.
  */
 
 #include "test/test_led.h"
@@ -16,6 +18,7 @@
 
 #include "config/board_pins.h"
 #include "config/robot_config.h"
+#include "test/teleplot.h"
 
 void testLedSetup()
 {
@@ -29,7 +32,10 @@ void testLedSetup()
 void testLedLoop()
 {
    digitalWrite(pins::LED_STATUS, HIGH);
+   teleplot::send("led", (int32_t)1);
    delay(1000);
+
    digitalWrite(pins::LED_STATUS, LOW);
+   teleplot::send("led", (int32_t)0);
    delay(1000);
 }

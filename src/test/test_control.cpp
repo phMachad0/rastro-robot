@@ -5,7 +5,7 @@
  *
  * Rodará a malha completa — posição da linha, PID, amortecimento por
  * giroscópio e classificador de regime — com os motores desabilitados,
- * imprimindo cada termo separadamente no Serial Plotter. Permite conferir o
+ * emitindo cada termo como uma série própria do Teleplot. Permite conferir o
  * sinal e a ordem de grandeza da ação de controle movendo o robô à mão sobre a
  * linha, sem risco de ele sair correndo pela bancada.
  *

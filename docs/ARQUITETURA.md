@@ -600,26 +600,46 @@ pio run -e test_ir -t upload && pio device monitor -e test_ir
 
 | Ambiente | O que exercita | Como visualizar |
 |----------|----------------|-----------------|
-| `test_led` | GPIO básico, prova que a placa grava e roda | LED da placa |
-| `test_motors` | LEDC PWM, sentido de rotação, faixa útil de duty, e **qual lado é qual** | Serial Monitor + observação |
-| `test_ir` | 6 canais ADC1, calibração, cálculo de posição | Serial Plotter (S0..S5) |
-| `test_imu` | I2C, **interrupção de data-ready**, bias, taxa efetiva em Hz | Serial Plotter (`gz`, `heading`) |
-| `test_wifi` | conexão STA, fallback AP, mDNS, WebSocket com telemetria sintética | Navegador + Serial Monitor |
-| `test_control` | malha fechada com motores **desabilitados**: imprime a ação do PID sem mover o robô | Serial Plotter (erro, `u`, termos) |
+| `test_led` | GPIO básico, prova que a placa grava e roda | LED da placa + série `led` |
+| `test_motors` | LEDC PWM, sentido de rotação, faixa útil de duty, e **qual lado é qual** | Série `duty` + observação das rodas |
+| `test_ir` | 6 canais ADC1, calibração, cálculo de posição | Séries `S0`..`S5` |
+| `test_imu` | I2C, **interrupção de data-ready**, bias, taxa efetiva em Hz | Séries `gyroZ`, `acc*`, `heading` |
+| `test_wifi` | conexão STA, fallback AP, mDNS, WebSocket com telemetria sintética | Navegador + painel de log |
+| `test_control` | malha fechada com motores **desabilitados**: emite a ação do PID sem mover o robô | Séries `error`, `u`, termos P/I/D |
 
 ### 8.3 Formato de saída serial
 
-Formato único para todos os testes que emitem dados contínuos: **Serial Plotter**
-(Arduino IDE ou a extensão Teleplot do VSCode), com `rótulo:valor` separado por
-tabulação e uma linha por amostra, como em:
+Visualizador único para todos os testes: a extensão **Teleplot** do VSCode. Ela
+plota as linhas que começam com `>` e joga as demais num painel de log, então
+texto corrido e dados plotados convivem na mesma porta sem se atrapalhar — não
+é preciso escolher entre "monitor legível" e "gráfico".
 
-```
-S0:412	S1:398	S2:2910	S3:3005	S4:401	S5:388
+O formato fica num só lugar, `include/test/teleplot.h`, e os testes chamam
+`teleplot::send()`:
+
+```cpp
+teleplot::send("S0", (int32_t)412);            // >S0:1204:412
+teleplot::send("gyroZ", -87.4f, "deg/s");      // >gyroZ:1204:-87.400§deg/s
 ```
 
-Um formato só, e não dois, para que qualquer teste seja aberto no mesmo
-visualizador sem reconfigurar o monitor. Os testes que apenas relatam progresso,
-como `test_motors`, seguem imprimindo texto corrido.
+Duas decisões embutidas no helper:
+
+- **Timestamp de `millis()` em toda amostra.** Sem ele o Teleplot usa a hora de
+  chegada do dado no computador, que embute a latência da serial e do buffer do
+  sistema operacional. Como boa parte do que se olha aqui é comportamento
+  temporal — oscilação, atraso da malha, taxa efetiva do sensor —, um eixo de
+  tempo distorcido levaria a conclusões erradas na sintonia.
+- **Unidade junto do valor.** O Teleplot separa as séries por unidade no eixo,
+  o que evita que aceleração em `g` e taxa angular em `deg/s` acabem no mesmo
+  gráfico com escalas incompatíveis.
+
+**Como usar:** instalar a extensão Teleplot, gravar com `pio run -e <alvo> -t
+upload` e rodar *Teleplot: Connect to Serial Port* na paleta de comandos,
+escolhendo a porta e 115200 baud.
+
+> ⚠️ O Teleplot abre a porta em modo exclusivo. Não dá para deixar o
+> `pio device monitor` aberto ao mesmo tempo — feche um antes de abrir o outro,
+> senão a porta aparece como ocupada e a gravação falha.
 
 **Regra de ouro:** nenhum `Serial.print` dentro de ISR, e nenhum em `TaskControl`.
 No firmware completo, todo log passa por `TaskTelemetry`. O `SerialMutex.h` que já

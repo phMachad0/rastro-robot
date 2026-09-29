@@ -3,8 +3,9 @@
  *
  * @brief Leitura bruta dos canais do QTR-8A.
  *
- * Lê os canais analógicos com analogRead() e imprime no formato do Serial
- * Plotter: `rótulo:valor` separado por tabulação, uma amostra por linha.
+ * Lê os canais analógicos com analogRead() e emite cada canal como uma série
+ * do Teleplot (S0 a S5), o que permite ver os seis traços ao mesmo tempo
+ * enquanto a linha é passada por baixo do array.
  *
  * Ligação (ESP32 DevKit v1):
  *   VCC   -> 3V3 (NÃO usar 5V: o ADC do ESP32 suporta no máximo ~3.3 V)
@@ -30,6 +31,7 @@
 
 #include "config/board_pins.h"
 #include "config/robot_config.h"
+#include "test/teleplot.h"
 
 namespace {
 
@@ -53,7 +55,7 @@ void testIrSetup()
 
    Serial.println();
    Serial.printf("Teste do array IR: %u canais em ADC1\n", pins::IR_CHANNEL_COUNT);
-   Serial.println("Formato do Serial Plotter: S0..S5, de 0 (claro / linha) a 4095 (escuro / fundo)");
+   Serial.println("Series do Teleplot: S0..S5, de 0 (claro / linha) a 4095 (escuro / fundo)");
 }
 
 void testIrLoop()
@@ -72,8 +74,9 @@ void testIrLoop()
    }
 
    for (uint8_t i = 0; i < pins::IR_CHANNEL_COUNT; i++) {
-      Serial.printf("S%u:%u%c", i, sensor_values[i],
-                    i < pins::IR_CHANNEL_COUNT - 1 ? '\t' : '\n');
+      char name[4];
+      snprintf(name, sizeof(name), "S%u", i);
+      teleplot::send(name, (int32_t)sensor_values[i]);
    }
 
    delay(REFRESH_MS);

@@ -1,5 +1,5 @@
 /**
- * @file pid_algorithm.cpp
+ * @file pid_algorithm.h
  *
  * @brief PID algorithm.
  *

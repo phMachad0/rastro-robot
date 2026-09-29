@@ -41,40 +41,36 @@ constexpr uint32_t TELEMETRY_PERIOD_MS  = 1000 / TELEMETRY_HZ;
 /** @brief Leituras por canal em cada amostragem, para média e redução de ruído. */
 constexpr uint8_t IR_SAMPLES_PER_CHANNEL = 4;
 
-/** @brief Escala da leitura normalizada de cada canal, após calibração. */
-constexpr uint16_t IR_NORMALIZED_MAX = 1000;
+/**
+ * @brief Limiar que separa fundo escuro de linha clara, na leitura bruta do ADC.
+ *
+ * Leitura **acima** do limiar é fundo escuro; abaixo ou igual é a linha branca.
+ * Como o QTR-8A mede reflexão, a superfície clara reflete mais e lê mais baixo.
+ *
+ * O valor é fixo e dispensa calibração: a faixa de operação do array é
+ * conhecida e estável o bastante para que 4000 separe os dois casos com folga
+ * em qualquer ponto da pista.
+ *
+ * @note Sem histerese, de propósito — é o que mantém a leitura simples. Se
+ *       algum canal oscilar com o robô parado e a leitura perto de 4000, o
+ *       sintoma aparece como `detectedCount` piscando no test_ir.
+ */
+constexpr uint16_t IR_BLACK_THRESHOLD = 4000;
 
 /**
- * @brief Posição de setpoint, correspondente ao centro do array.
+ * @brief Distância de posição entre dois canais vizinhos.
  *
- * A posição vai de 0 (extrema esquerda) a IR_NORMALIZED_MAX * (N - 1) com
- * N = 6 canais, ou seja, de 0 a 5000. O centro é 2500.
+ * Define a escala de IrArray::position(): com N canais a posição vai de 0
+ * (extrema esquerda) a IR_POSITION_UNIT * (N - 1), ou seja, de 0 a 5000 para
+ * os 6 canais em uso.
  */
+constexpr uint16_t IR_POSITION_UNIT = 1000;
+
+/** @brief Posição de setpoint, o centro do array na escala de 0 a 5000. */
 constexpr uint16_t LINE_POSITION_CENTER = 2500;
-
-/**
- * @brief Soma mínima dos pesos para considerar que a linha foi detectada.
- *
- * Abaixo disso nenhum sensor está sobre a linha e a posição calculada não
- * tem significado.
- */
-constexpr uint16_t LINE_LOST_THRESHOLD = 300;
 
 /** @brief Tempo sem linha após o qual o supervisor leva o robô para FAULT. */
 constexpr uint32_t LINE_LOST_TIMEOUT_MS = 400;
-
-/** @brief Duração da varredura de calibração do array IR. */
-constexpr uint32_t IR_CALIBRATION_MS = 6000;
-
-/**
- * @brief Amplitude mínima entre o mínimo e o máximo de um canal calibrado.
- *
- * Um canal cujo min e max ficaram próximos não viu contraste durante a
- * calibração — sensor solto, mal posicionado ou varredura curta demais.
- * Normalizar por uma amplitude minúscula amplificaria só ruído, então o canal
- * é marcado como não calibrado e a calibração inteira é rejeitada.
- */
-constexpr uint16_t IR_CALIBRATION_MIN_SPAN = 200;
 
 /*****************************************
  * Motores

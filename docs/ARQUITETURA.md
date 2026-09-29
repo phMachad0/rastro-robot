@@ -113,7 +113,7 @@ include/
     features.h          // flags de compilação                         [etapa 1]
   hal/
     motor_driver.h      // 2 lados; setSpeed(left,right) em [-1..1]        [etapa 2]
-    ir_array.h          // leitura bruta, calibração, posição da linha     [etapa 2]
+    ir_array.h          // leitura bruta, limiar fixo, posição da linha    [etapa 2]
     imu.h               // wrapper do MPU6050 + ISR de data-ready          [etapa 2]
     status_led.h
   control/
@@ -275,19 +275,29 @@ sinal é invertido em relação ao caso mais comum. A cadeia é:
 
 1. **Amostragem:** 6 canais × 4 leituras, média simples (o teste atual já faz isso
    com 8 amostras; 4 basta a 500 Hz).
-2. **Calibração:** para cada canal, guardar `min` e `max` observados durante a rotina
-   de calibração (robô varrendo a linha por alguns segundos). Normalizar para
-   `[0, 1000]`.
-3. **Inversão:** como a linha é clara, o valor normalizado de "está sobre a linha"
-   é o **baixo** na leitura bruta. `w[i] = 1000 - normalizado[i]`.
-4. **Posição:** média ponderada
-   `pos = Σ(i · 1000 · w[i]) / Σ(w[i])`, dando `0` (extrema esquerda) a `5000`
-   (extrema direita) para 6 sensores. O setpoint é o centro, `2500`.
-5. **Linha perdida:** se `Σ(w[i])` cai abaixo de um limiar, marca `lineLost = true`
-   e mantém a última posição válida — `TaskControl` então faz busca (seção 5.5).
+2. **Classificação por limiar fixo:** leitura acima de `IR_BLACK_THRESHOLD` (4000) é
+   fundo escuro, abaixo é linha branca. Não há calibração: a faixa de operação do
+   array é conhecida e estável, então não há o que aprender em tempo de execução.
+3. **Posição:** média dos índices dos canais que veem linha,
+   `pos = Σ(i · 1000) / n`, dando `0` (extrema esquerda) a `5000` (extrema direita)
+   para 6 sensores. O setpoint é o centro, `2500`.
+4. **Linha perdida:** se nenhum canal vê linha, `lineDetected` fica falso e a última
+   posição válida é mantida — `TaskControl` então faz busca (seção 5.5).
 
-Os valores de calibração são persistidos em **NVS** para não recalibrar a cada boot,
-com um comando no dashboard para forçar recalibração.
+**Consequência do limiar fixo:** a posição é quantizada. Com um ou dois canais sobre
+a linha, os valores possíveis são múltiplos de 500 — onze posições discretas na faixa
+de 0 a 5000, em vez de um contínuo. Isso torna o termo derivativo calculado sobre a
+posição especialmente ruidoso, já que ele derivaria uma escada.
+
+É justamente o que o amortecimento por giroscópio da seção 5.3 resolve: `ωz` mede a
+rotação do chassi de forma contínua e não sofre com a quantização, então dá para
+manter `Kd` baixo e deixar o amortecimento com `Kg`. A simplificação do sensor
+aumenta a importância do RF06, não a diminui.
+
+Se a quantização se mostrar limitante na sintonia, o caminho sem reintroduzir
+calibração é normalizar linearmente a leitura bruta contra a faixa fixa `[0, 4000]` em
+vez de cortá-la em dois níveis, recuperando a média ponderada contínua. Fica
+registrado como alternativa, não como plano.
 
 ### 5.2 PID de linha
 
@@ -381,10 +391,11 @@ stateDiagram-v2
     BOOT --> CALIBRATING: auto-teste OK
     BOOT --> FAULT: IMU/IR ausentes
 
-    CALIBRATING --> IDLE: calibração IR + bias do giro concluídos
+    CALIBRATING --> IDLE: bias do giroscópio estimado
     note right of CALIBRATING
-      Calibração do array IR e
-      do bias do giroscópio.
+      Estimativa do bias do
+      giroscópio. O array IR não
+      precisa de calibração.
       Motores travados.
     end note
 
@@ -504,7 +515,6 @@ identificar na hora qual termo está dominando ou explodindo.
 { "cmd": "start" }
 { "cmd": "stop" }
 { "cmd": "reset" }
-{ "cmd": "calibrate" }
 { "cmd": "set_pid", "regime": "straight", "kp": 0.8, "ki": 0.0, "kd": 0.05, "kg": 0.3 }
 { "cmd": "set_speed", "base": 0.55 }
 { "cmd": "set_policy", "runMs": 30000, "stopMs": 3000 }
@@ -518,10 +528,10 @@ Página única, sem dependências externas (tudo embarcado no LittleFS — não 
 garantida no laboratório):
 
 - **Gráfico rolante** de posição da linha, erro e `ωz` no tempo;
-- **Barras** dos 6 canais IR crus e normalizados — o mesmo que o teste serial atual
-  mostra, mas sem fio;
+- **Barras** dos 6 canais IR crus, com o limiar marcado — serve para conferir à
+  distância que `IR_BLACK_THRESHOLD` continua com folga dos dois lados;
 - **Indicadores** de modo, regime (reta/curva), PWM de cada lado, heap, RSSI;
-- **Controles** de start/stop/reset/calibrar;
+- **Controles** de start/stop/reset;
 - **Sliders** de Kp/Ki/Kd/Kg por regime e de velocidade base, com botão "salvar em NVS";
 - **Botão de gravar sessão** exportando CSV do buffer para análise posterior.
 
@@ -603,7 +613,7 @@ pio run -e test_ir -t upload && pio device monitor -e test_ir
 |----------|----------------|-----------------|
 | `test_led` | GPIO básico, prova que a placa grava e roda | LED da placa + série `led` |
 | `test_motors` | LEDC PWM, sentido de rotação, faixa útil de duty, e **qual lado é qual** | Série `duty` + observação das rodas |
-| `test_ir` | 6 canais ADC1, calibração, cálculo de posição | Séries `S0`..`S5` |
+| `test_ir` | 6 canais ADC1, limiar fixo, cálculo de posição | Séries `raw0`..`raw5`, `threshold`, `position` |
 | `test_imu` | I2C, **interrupção de data-ready**, bias, taxa efetiva em Hz | Séries `gyroZ`, `acc*`, `heading` |
 | `test_wifi` | conexão STA, fallback AP, mDNS, WebSocket com telemetria sintética | Navegador + painel de log |
 | `test_control` | malha fechada com motores **desabilitados**: emite a ação do PID sem mover o robô | Séries `error`, `u`, termos P/I/D |
@@ -687,7 +697,7 @@ namespace cfg {
 }
 ```
 
-Persistência em NVS (namespace `rastro`): calibração do array IR, bias do giroscópio,
+Persistência em NVS (namespace `rastro`): bias do giroscópio,
 ganhos dos dois regimes, velocidade base, parâmetros da política de parada,
 credenciais de Wi-Fi.
 
@@ -702,7 +712,7 @@ credenciais de Wi-Fi.
 | Robô sai da pista | `LINE_LOST_TIMEOUT_MS` → estado `FAULT` → motores em zero |
 | Queda de bateria sob carga | Detecção de brownout do ESP32 + log da causa do reset no boot |
 | Comando perigoso pela rede | Comandos só aplicados em `TaskSupervisor`, em pontos seguros do ciclo; `start` nunca é aceito nos estados `FAULT` ou `CALIBRATING` |
-| Motores acionados durante calibração | Saída de motor fisicamente forçada a zero fora de `RUNNING`, na camada do `MotorDriver` |
+| Motores acionados fora de `RUNNING` | `MotorDriver` nasce desarmado e ignora `setSpeed()` até um `arm()` explícito do supervisor |
 
 ---
 
@@ -727,7 +737,7 @@ Ordem pensada para que cada etapa seja testável sozinha antes da seguinte depen
 
 **Etapa 2 — HAL** ✅ concluída
 5. ✅ `MotorDriver` sobre LEDC, com `setSpeed(left, right)` em `[-1, 1]` e trava de segurança.
-6. ✅ `IrArray` com os 6 canais de ADC1, calibração e cálculo de posição.
+6. ✅ `IrArray` com os 6 canais de ADC1, classificação por limiar fixo e cálculo de posição.
 7. ✅ `Imu` com interrupção de data-ready, remoção de bias e filtro.
 8. ✅ Validar: os sete ambientes compilam sem warnings; `test_motors`, `test_ir` e
    `test_imu` reescritos para exercitar a HAL pela mesma interface que o controle usará.
@@ -743,9 +753,16 @@ Ordem pensada para que cada etapa seja testável sozinha antes da seguinte depen
      o watchdog resetaria a placa durante a estimativa de bias, que leva ~2,5 s.
      Trocado por `vTaskDelay(1)`.
 
-   Pendente de bancada: validar a rampa de aceleração (`MOTOR_SLEW_PER_S`) e conferir
-   que `rateHz` no `test_imu` fica próximo dos 200 Hz configurados, o que é a prova
-   de que a interrupção de data-ready está de fato chegando.
+   **Simplificação posterior:** a calibração do `IrArray` foi removida. A faixa de
+   operação do array é conhecida e estável, então a classificação passou a ser por
+   limiar fixo em `IR_BLACK_THRESHOLD` (4000) — some o estado de varredura, o struct
+   de extremos, a persistência em NVS e o modo degradado de "não calibrado". O custo
+   é a quantização da posição, discutida na seção 5.1.
+
+   Pendente de bancada: validar a rampa de aceleração (`MOTOR_SLEW_PER_S`); conferir
+   que `rateHz` no `test_imu` fica próximo dos 200 Hz configurados, o que é a prova de
+   que a interrupção de data-ready está de fato chegando; e conferir no `test_ir` que
+   o limiar de 4000 cai numa folga clara entre os dois patamares de leitura.
 
 **Etapa 3 — Controle**
 9. Migrar `PidAlgorithm` para `control/`, corrigir o bug de limite do array, adicionar `dt` e anti-windup.

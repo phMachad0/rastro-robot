@@ -3,16 +3,21 @@
  *
  * @brief Teste do array QTR-8A através do IrArray.
  *
- * O teste tem duas fases. Na **calibração**, por cfg::IR_CALIBRATION_MS, é
- * preciso varrer o array sobre a linha de um extremo ao outro, para que cada
- * canal veja tanto o fundo escuro quanto a linha clara. Na fase de **leitura**,
- * a posição calculada é emitida continuamente.
+ * Sem fase de calibração: a classificação é por limiar fixo
+ * (cfg::IR_BLACK_THRESHOLD), então o teste já entra lendo.
  *
  * O que observar no Teleplot:
- *   - `S0`..`S5`: os pesos normalizados. O canal sobre a linha vai a ~1000.
+ *   - `raw0`..`raw5`: as leituras brutas, com `threshold` plotado junto. Esta é
+ *     a verificação mais importante do teste — com o limiar fixo em código, é
+ *     preciso enxergar que ele cai numa folga clara entre os dois patamares,
+ *     não em cima de um deles. Se algum canal encostar nos 4000 estando sobre o
+ *     fundo, ou passar deles estando sobre a linha, o valor precisa mudar.
  *   - `position`: deve varrer de 0 a 5000 conforme a linha passa da esquerda
  *     para a direita, cruzando 2500 no centro.
- *   - `lineDetected`: cai a zero quando o array sai da linha.
+ *   - `detectedCount`: quantos canais veem linha. Passando por cima da linha
+ *     deve ficar em 1 ou 2. Piscando com o robô parado indica leitura oscilando
+ *     em torno do limiar. Indo a 6, o array está sobre uma faixa transversal ou
+ *     saiu da pista.
  *
  * Se `position` andar para o lado contrário do movimento real, a ordem de
  * pins::IR_CHANNELS não corresponde à ordem física dos sensores no chassi — é
@@ -40,47 +45,6 @@ IrArray ir;
 
 constexpr uint32_t REFRESH_MS = 20;
 
-void runCalibration()
-{
-   Serial.println();
-   Serial.printf("Calibracao: varra o array sobre a linha por %lu segundos.\n",
-                 (unsigned long)(cfg::IR_CALIBRATION_MS / 1000));
-   Serial.println("Cada canal precisa ver o fundo escuro E a linha clara.");
-
-   ir.calibrationReset();
-
-   const uint32_t deadline = millis() + cfg::IR_CALIBRATION_MS;
-
-   while ((int32_t)(millis() - deadline) < 0) {
-      ir.sample();
-      ir.calibrationAccumulate();
-
-      /* Durante a calibração ainda não há normalização, então o que se plota é
-         o valor bruto — serve para ver, ao vivo, se todo canal está variando. */
-      for (uint8_t i = 0; i < pins::IR_CHANNEL_COUNT; i++) {
-         char name[8];
-         snprintf(name, sizeof(name), "raw%u", i);
-         teleplot::send(name, (int32_t)ir.raw(i));
-      }
-
-      delay(REFRESH_MS);
-   }
-
-   if (!ir.calibrationFinish()) {
-      Serial.println("FALHA: algum canal nao viu contraste suficiente.");
-      Serial.println("Conferir altura dos sensores, ligacao e se a varredura cobriu todo o array.");
-   } else {
-      Serial.println("Calibracao concluida.");
-   }
-
-   const IrCalibration& c = ir.calibration();
-   for (uint8_t i = 0; i < pins::IR_CHANNEL_COUNT; i++) {
-      Serial.printf("  S%u (GPIO%2u): min=%4u max=%4u amplitude=%4u\n",
-                    i, pins::IR_CHANNELS[i], c.min[i], c.max[i],
-                    (uint16_t)(c.max[i] - c.min[i]));
-   }
-}
-
 }  // namespace
 
 void testIrSetup()
@@ -91,38 +55,28 @@ void testIrSetup()
 
    Serial.println();
    Serial.printf("Teste do array IR: %u canais em ADC1\n", pins::IR_CHANNEL_COUNT);
-
-   runCalibration();
-
-   Serial.println("\nLeitura: series S0..S5 (peso), position (0..5000) e lineDetected.");
+   Serial.printf("Limiar fixo: leitura > %u e fundo escuro, <= %u e linha branca\n",
+                 cfg::IR_BLACK_THRESHOLD, cfg::IR_BLACK_THRESHOLD);
+   Serial.println("Series: raw0..raw5, threshold, position, error, detectedCount");
 }
 
 void testIrLoop()
 {
    ir.sample();
 
-   if (!ir.isCalibrated()) {
-      /* Sem calibração válida não há posição para mostrar; cai para o bruto
-         para que o teste ainda sirva de diagnóstico de ligação. */
-      for (uint8_t i = 0; i < pins::IR_CHANNEL_COUNT; i++) {
-         char name[8];
-         snprintf(name, sizeof(name), "raw%u", i);
-         teleplot::send(name, (int32_t)ir.raw(i));
-      }
-
-      delay(REFRESH_MS);
-      return;
-   }
-
    for (uint8_t i = 0; i < pins::IR_CHANNEL_COUNT; i++) {
-      char name[4];
-      snprintf(name, sizeof(name), "S%u", i);
-      teleplot::send(name, (int32_t)ir.weight(i));
+      char name[8];
+      snprintf(name, sizeof(name), "raw%u", i);
+      teleplot::send(name, (int32_t)ir.raw(i));
    }
+
+   /* O limiar vai como série constante para poder ser lido no mesmo gráfico
+      das leituras brutas — é o que permite conferir a folga de cada lado. */
+   teleplot::send("threshold", (int32_t)cfg::IR_BLACK_THRESHOLD);
 
    teleplot::send("position", (int32_t)ir.position());
    teleplot::send("error", (int32_t)ir.error());
-   teleplot::send("weightSum", (int32_t)ir.weightSum());
+   teleplot::send("detectedCount", (int32_t)ir.detectedCount());
    teleplot::send("lineDetected", (int32_t)(ir.lineDetected() ? 1 : 0));
 
    delay(REFRESH_MS);

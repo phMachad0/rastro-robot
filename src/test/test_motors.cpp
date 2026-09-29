@@ -5,20 +5,23 @@
  *
  * Exercita a classe pela mesma interface que a malha de controle vai usar —
  * velocidade efetiva em [-1, 1] —, não o PWM cru. Assim o que este teste
- * valida é o caminho real: compensação de zona morta, trim, rampa e trava de
+ * valida é o caminho real: compensação de zona morta, trim e trava de
  * armamento.
  *
  * O que ele responde:
  *   1. Qual lado físico responde a qual canal do driver;
  *   2. Se o sentido de rotação bate com o esperado em cada lado;
- *   3. Se a compensação de zona morta está correta — a rampa lenta deve fazer
- *      a roda sair da inércia logo no começo, e não só perto do fim;
+ *   3. Se a compensação de zona morta está correta — na varredura em degraus, a
+ *      roda deve sair da inércia nos primeiros degraus. Se só girar perto de
+ *      0,6, a compensação não está sendo aplicada ou cfg::MOTOR_DEADZONE está
+ *      subestimada;
  *   4. Se os dois lados andam igual no mesmo comando (o fator MOTOR_TRIM).
  *
  * @warning Rodar com o robô suspenso, com as rodas sem tocar a bancada.
  *
- * Visualização: séries `cmdL`, `cmdR`, `appliedL` e `appliedR` no Teleplot. A
- * distância entre `cmd` e `applied` é a rampa de aceleração agindo.
+ * Visualização: séries `cmdL`, `cmdR`, `appliedL` e `appliedR` no Teleplot.
+ * `cmd` e `applied` só divergem quando a saturação em cfg::MAX_SPEED ou o trim
+ * entram em ação — o driver não filtra nem atrasa o comando.
  */
 
 #include "test/test_motors.h"
@@ -37,59 +40,37 @@ MotorDriver motors;
 constexpr uint32_t STEP_MS  = 2000;
 constexpr uint32_t PAUSE_MS = 1000;
 
-/** @brief Período com que setSpeed é chamada, imitando a malha de controle. */
-constexpr uint32_t TICK_MS = 10;
-
-/**
- * @brief Mantém um comando por um tempo, chamando setSpeed em cadência fixa.
- *
- * A cadência importa: a rampa do MotorDriver é calculada sobre o tempo real
- * entre chamadas, então comandar uma vez e dormir dois segundos nunca deixaria
- * a rampa progredir.
- */
+/** @brief Comanda os dois lados e mantém por um tempo. */
 void hold(const char* label, float left, float right, uint32_t duration_ms)
 {
+   motors.setSpeed(left, right);
+
    Serial.printf("-- %s (L=%.2f R=%.2f) --\n", label, left, right);
 
-   const uint32_t deadline = millis() + duration_ms;
+   teleplot::send("cmdL", left);
+   teleplot::send("cmdR", right);
+   teleplot::send("appliedL", motors.appliedLeft());
+   teleplot::send("appliedR", motors.appliedRight());
 
-   while ((int32_t)(millis() - deadline) < 0) {
-      motors.setSpeed(left, right);
-
-      teleplot::send("cmdL", left);
-      teleplot::send("cmdR", right);
-      teleplot::send("appliedL", motors.appliedLeft());
-      teleplot::send("appliedR", motors.appliedRight());
-
-      delay(TICK_MS);
-   }
+   delay(duration_ms);
 }
 
 /**
- * @brief Sobe a velocidade em degraus, para localizar o ponto de partida real.
- *
- * Com a compensação de zona morta funcionando, a roda deve começar a girar
- * logo nos primeiros degraus. Se só girar perto de 0.6, a compensação não está
- * sendo aplicada ou cfg::MOTOR_DEADZONE está subestimada.
+ * @brief Sobe a velocidade em degraus num lado, para achar o ponto de partida.
  */
-void rampSide(const char* label, bool left_side)
+void stepSide(const char* label, bool left_side)
 {
    Serial.printf("%s: degraus de velocidade — anote onde a roda comeca a girar\n", label);
 
    for (float speed = 0.0f; speed <= cfg::MAX_SPEED; speed += 0.05f) {
-      const uint32_t deadline = millis() + 500;
+      motors.setSpeed(left_side ? speed : 0.0f, left_side ? 0.0f : speed);
 
-      while ((int32_t)(millis() - deadline) < 0) {
-         motors.setSpeed(left_side ? speed : 0.0f, left_side ? 0.0f : speed);
-
-         teleplot::send("speedCmd", speed);
-         teleplot::send("appliedL", motors.appliedLeft());
-         teleplot::send("appliedR", motors.appliedRight());
-
-         delay(TICK_MS);
-      }
+      teleplot::send("speedCmd", speed);
+      teleplot::send("appliedL", motors.appliedLeft());
+      teleplot::send("appliedR", motors.appliedRight());
 
       Serial.printf("  velocidade = %.2f\n", speed);
+      delay(500);
    }
 
    motors.stop();
@@ -147,6 +128,6 @@ void testMotorsLoop()
    hold("Giro no eixo", cfg::BASE_SPEED, -cfg::BASE_SPEED, STEP_MS);
    hold("Parado", 0.0f, 0.0f, PAUSE_MS);
 
-   rampSide("Esquerda", true);
-   rampSide("Direita ", false);
+   stepSide("Esquerda", true);
+   stepSide("Direita ", false);
 }

@@ -133,22 +133,6 @@ constexpr uint32_t MOTOR_PWM_FREQ_HZ = 5000;
  */
 constexpr uint8_t MOTOR_PWM_RESOLUTION_BITS = 10;
 
-/**
- * @brief Variação máxima de velocidade por segundo, em unidades de [0, 1].
- *
- * Limita a taxa de subida da saída dos motores. Com quatro motores partindo ao
- * mesmo tempo, o degrau de corrente é o que dispara a proteção de sobrecorrente
- * do powerbank e derruba o ESP32 junto; a rampa espalha esse pico no tempo.
- *
- * 4.0 significa ir de parado a toda velocidade em 250 ms — rápido o bastante
- * para não atrapalhar a malha de controle, que trabalha com correções pequenas
- * e contínuas, e lento o bastante para suavizar a partida.
- *
- * @note Ainda não validado na bancada. Se o robô ficar lerdo para responder a
- *       curvas fechadas, este é o primeiro valor a subir.
- */
-constexpr float MOTOR_SLEW_PER_S = 4.0f;
-
 /*****************************************
  * Ganhos do controlador — regime de reta
  *

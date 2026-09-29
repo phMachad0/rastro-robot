@@ -1,0 +1,252 @@
+{
+   "widgets": [
+      {
+         "type": "single_value_number",
+         "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 0,
+            "y": 0
+         },
+         "series": [
+            {
+               "name": "dutyPercent",
+               "sourceNames": [
+                  "dutyPercent"
+               ],
+               "formula": "",
+               "options": {
+                  "stroke": "rgba(231,76,60,1)",
+                  "fill": "rgba(231,76,60,0.1)"
+               },
+               "unit": "%",
+               "type": "number"
+            }
+         ],
+         "precision_mode": 0
+      },
+      {
+         "type": "chart",
+         "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 0,
+            "y": 0
+         },
+         "series": [
+            {
+               "name": "gyroZ",
+               "sourceNames": [
+                  "gyroZ"
+               ],
+               "formula": "",
+               "options": {
+                  "_serie": "gyroZ",
+                  "_id": "data-serie-44",
+                  "stroke": "rgba(231,76,60,1)",
+                  "fill": "rgba(231,76,60,0.1)"
+               },
+               "unit": "deg/s",
+               "type": "number"
+            }
+         ]
+      },
+      {
+         "type": "chart",
+         "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 0,
+            "y": 0
+         },
+         "series": [
+            {
+               "name": "gyroY",
+               "sourceNames": [
+                  "gyroY"
+               ],
+               "formula": "",
+               "options": {
+                  "_serie": "gyroY",
+                  "_id": "data-serie-43",
+                  "stroke": "rgba(231,76,60,1)",
+                  "fill": "rgba(231,76,60,0.1)"
+               },
+               "unit": "deg/s",
+               "type": "number"
+            }
+         ]
+      },
+      {
+         "type": "chart",
+         "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 0,
+            "y": 0
+         },
+         "series": [
+            {
+               "name": "gyroX",
+               "sourceNames": [
+                  "gyroX"
+               ],
+               "formula": "",
+               "options": {
+                  "_serie": "gyroX",
+                  "_id": "data-serie-42",
+                  "stroke": "rgba(231,76,60,1)",
+                  "fill": "rgba(231,76,60,0.1)"
+               },
+               "unit": "deg/s",
+               "type": "number"
+            }
+         ]
+      },
+      {
+         "type": "single_value_number",
+         "gridPos": {
+            "h": 3,
+            "w": 2,
+            "x": 0,
+            "y": 0
+         },
+         "series": [
+            {
+               "name": "S0",
+               "sourceNames": [
+                  "S0"
+               ],
+               "formula": "",
+               "options": {
+                  "stroke": "rgba(231,76,60,1)",
+                  "fill": "rgba(231,76,60,0.1)"
+               },
+               "type": "number"
+            }
+         ],
+         "precision_mode": 1
+      },
+      {
+         "type": "single_value_number",
+         "gridPos": {
+            "h": 3,
+            "w": 2,
+            "x": 0,
+            "y": 0
+         },
+         "series": [
+            {
+               "name": "S1",
+               "sourceNames": [
+                  "S1"
+               ],
+               "formula": "",
+               "options": {
+                  "stroke": "rgba(231,76,60,1)",
+                  "fill": "rgba(231,76,60,0.1)"
+               },
+               "type": "number"
+            }
+         ],
+         "precision_mode": 1
+      },
+      {
+         "type": "single_value_number",
+         "gridPos": {
+            "h": 3,
+            "w": 2,
+            "x": 0,
+            "y": 0
+         },
+         "series": [
+            {
+               "name": "S2",
+               "sourceNames": [
+                  "S2"
+               ],
+               "formula": "",
+               "options": {
+                  "stroke": "rgba(231,76,60,1)",
+                  "fill": "rgba(231,76,60,0.1)"
+               },
+               "type": "number"
+            }
+         ],
+         "precision_mode": 1
+      },
+      {
+         "type": "single_value_number",
+         "gridPos": {
+            "h": 3,
+            "w": 2,
+            "x": 0,
+            "y": 0
+         },
+         "series": [
+            {
+               "name": "S3",
+               "sourceNames": [
+                  "S3"
+               ],
+               "formula": "",
+               "options": {
+                  "stroke": "rgba(231,76,60,1)",
+                  "fill": "rgba(231,76,60,0.1)"
+               },
+               "type": "number"
+            }
+         ],
+         "precision_mode": 1
+      },
+      {
+         "type": "single_value_number",
+         "gridPos": {
+            "h": 3,
+            "w": 2,
+            "x": 0,
+            "y": 0
+         },
+         "series": [
+            {
+               "name": "S4",
+               "sourceNames": [
+                  "S4"
+               ],
+               "formula": "",
+               "options": {
+                  "stroke": "rgba(231,76,60,1)",
+                  "fill": "rgba(231,76,60,0.1)"
+               },
+               "type": "number"
+            }
+         ],
+         "precision_mode": 1
+      },
+      {
+         "type": "single_value_number",
+         "gridPos": {
+            "h": 3,
+            "w": 2,
+            "x": 0,
+            "y": 0
+         },
+         "series": [
+            {
+               "name": "S5",
+               "sourceNames": [
+                  "S5"
+               ],
+               "formula": "",
+               "options": {
+                  "stroke": "rgba(231,76,60,1)",
+                  "fill": "rgba(231,76,60,0.1)"
+               },
+               "type": "number"
+            }
+         ],
+         "precision_mode": 1
+      }
+   ],
+   "viewDuration": "15"
+}

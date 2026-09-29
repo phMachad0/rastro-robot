@@ -32,15 +32,6 @@ constexpr uint32_t DUTY_MAX = (1u << cfg::MOTOR_PWM_RESOLUTION_BITS) - 1;
  */
 constexpr float SPEED_EPSILON = 0.005f;
 
-/**
- * @brief Intervalo acima do qual o dt medido é descartado.
- *
- * Um intervalo muito longo significa que a malha ficou parada (boot, depuração,
- * ponto de parada no debugger). Usar esse dt daria uma rampa de passo enorme,
- * que é justamente o degrau de corrente que se quer evitar.
- */
-constexpr uint32_t DT_SANITY_LIMIT_US = 200000;
-
 float clampf(float v, float lo, float hi)
 {
    return v < lo ? lo : (v > hi ? hi : v);
@@ -75,12 +66,8 @@ void MotorDriver::begin()
 
 void MotorDriver::arm()
 {
-   /* Zera a rampa antes de liberar a saída, para que o primeiro setSpeed()
-      depois do arm() parta do repouso em vez de saltar para a última
-      velocidade comandada antes do desarme. */
    applied_left_ = 0.0f;
    applied_right_ = 0.0f;
-   last_update_us_ = micros();
 
    armed_ = true;
 }
@@ -117,21 +104,6 @@ void MotorDriver::stop(StopMode mode)
 
    applied_left_ = 0.0f;
    applied_right_ = 0.0f;
-   last_update_us_ = micros();
-}
-
-float MotorDriver::slew(float current, float target, float max_delta)
-{
-   const float delta = target - current;
-
-   if (delta > max_delta) {
-      return current + max_delta;
-   }
-   if (delta < -max_delta) {
-      return current - max_delta;
-   }
-
-   return target;
 }
 
 uint32_t MotorDriver::speedToDuty(float speed) const
@@ -185,24 +157,8 @@ void MotorDriver::setSpeed(float left, float right)
       right *= (1.0f + trim_);
    }
 
-   left  = clampf(left, -cfg::MAX_SPEED, cfg::MAX_SPEED);
-   right = clampf(right, -cfg::MAX_SPEED, cfg::MAX_SPEED);
-
-   /* dt medido, e não assumido: setSpeed() é chamada pela malha a 250 Hz no
-      firmware, mas as rotinas de teste chamam em cadências bem diferentes, e
-      uma rampa calibrada em "por ciclo" mudaria de velocidade junto. */
-   const uint32_t now_us = micros();
-   const uint32_t elapsed_us = now_us - last_update_us_;
-   last_update_us_ = now_us;
-
-   const float dt = (elapsed_us > DT_SANITY_LIMIT_US)
-                        ? (cfg::CONTROL_PERIOD_MS / 1000.0f)
-                        : (elapsed_us / 1000000.0f);
-
-   const float max_delta = cfg::MOTOR_SLEW_PER_S * dt;
-
-   applied_left_  = slew(applied_left_, left, max_delta);
-   applied_right_ = slew(applied_right_, right, max_delta);
+   applied_left_  = clampf(left, -cfg::MAX_SPEED, cfg::MAX_SPEED);
+   applied_right_ = clampf(right, -cfg::MAX_SPEED, cfg::MAX_SPEED);
 
    applySide(LEDC_CH_LEFT, pins::MOTOR_L_IN1, pins::MOTOR_L_IN2, applied_left_);
    applySide(LEDC_CH_RIGHT, pins::MOTOR_R_IN3, pins::MOTOR_R_IN4, applied_right_);

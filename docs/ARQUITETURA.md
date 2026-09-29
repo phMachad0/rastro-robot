@@ -759,10 +759,10 @@ Ordem pensada para que cada etapa seja testável sozinha antes da seguinte depen
    de extremos, a persistência em NVS e o modo degradado de "não calibrado". O custo
    é a quantização da posição, discutida na seção 5.1.
 
-   Pendente de bancada: validar a rampa de aceleração (`MOTOR_SLEW_PER_S`); conferir
-   que `rateHz` no `test_imu` fica próximo dos 200 Hz configurados, o que é a prova de
-   que a interrupção de data-ready está de fato chegando; e conferir no `test_ir` que
-   o limiar de 4000 cai numa folga clara entre os dois patamares de leitura.
+   Pendente de bancada: conferir que `rateHz` no `test_imu` fica próximo dos 200 Hz
+   configurados, o que é a prova de que a interrupção de data-ready está de fato
+   chegando; e conferir no `test_ir` que o limiar de 4000 cai numa folga clara entre
+   os dois patamares de leitura.
 
 **Etapa 3 — Controle**
 9. Migrar `PidAlgorithm` para `control/`, corrigir o bug de limite do array, adicionar `dt` e anti-windup.
@@ -815,15 +815,32 @@ Ordem pensada para que cada etapa seja testável sozinha antes da seguinte depen
 > elimina a queda), a zona morta cai bastante e a resolução de controle melhora junto.
 > **Remedir depois de qualquer mudança na alimentação.**
 
+**Rampa de aceleração: descartada.** Chegou a existir no `MotorDriver` como limitador
+de taxa de variação, para espalhar no tempo o degrau de corrente da partida. Foi
+removida por três razões:
+
+1. **Não suavizava o degrau que importa.** A compensação de zona morta é descontínua em
+   zero — o primeiro tick fora do repouso já produz `duty = 0,65 + 0,35·0,016 ≈ 0,66`.
+   O salto de 0 a ~66% de duty acontece em um ciclo, com ou sem rampa; ela só suavizava
+   os 34% restantes.
+2. **Atrasava a malha de controle.** A 4,0 unidades por segundo, inverter a ação
+   diferencial de -0,5 para +0,5 levaria 250 ms, ou 62 ciclos de controle. É um atraso
+   de fase dentro da malha fechada, ou seja, perda direta de margem de estabilidade
+   justo na entrada de curva.
+3. **Estava na camada errada.** Quem molda a dinâmica do robô é a camada de controle.
+   O driver traduz comando em duty; editar o comando quebra essa divisão.
+
+O transiente rápido que dispara a proteção do powerbank se resolve no **capacitor de
+bulk** nos terminais do L298N, que age em microssegundos e não custa margem de fase.
+Se depois ficar comprovado que falta partida suave, o lugar é o `Supervisor` rampando
+`BASE_SPEED` ao entrar em `RUNNING` — aplicado só na transição, sem tocar na ação
+diferencial, onde é política de estado e não mecanismo de driver.
+
 ### Em aberto
 
 - **Alimentação.** Powerbank com saída de 9 V via PD trigger para o driver, capacitor de
   bulk de 1000–2200 µF nos terminais do L298N para absorver o pico de partida, e buck
   separado para o ESP32, de forma que a queda do barramento durante a partida dos motores
   não provoque reset. Depende da tensão nominal dos motores, ainda não confirmada.
-- **Rampa de aceleração.** `MOTOR_SLEW_PER_S` está em 4,0 (parado a toda velocidade em
-  250 ms), escolhido para espalhar no tempo o degrau de corrente que dispara a proteção
-  do powerbank. Ainda não validado na pista — se o robô ficar lerdo em curva fechada,
-  é o primeiro valor a subir.
 - **Credenciais de Wi-Fi.** Definir se ficam em `secrets.h` ignorado pelo git ou
   configuráveis por portal cativo no modo AP.

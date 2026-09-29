@@ -108,21 +108,24 @@ teste de motor acabaria puxando o servidor WebSocket junto.
 ```
 include/
   config/
-    board_pins.h        // mapa de pinos da seção 2
-    robot_config.h      // ganhos, períodos, limites, velocidades
-    features.h          // flags de compilação (FEATURE_LATERAL_MARKS, ...)
+    board_pins.h        // mapa de pinos da seção 2                    [etapa 1]
+    robot_config.h      // ganhos, períodos, limites, velocidades      [etapa 1]
+    features.h          // flags de compilação                         [etapa 1]
   hal/
     motor_driver.h      // abstração dos 2 lados; setSpeed(left, right) em [-1..1]
     ir_array.h          // leitura bruta, calibração, posição da linha
     imu.h               // wrapper do MPU6050 + ISR de data-ready
     status_led.h
   control/
-    pid_algorithm.h     // JÁ EXISTE — reaproveitado
+    pid_algorithm.h     // JÁ EXISTE — reaproveitado                    [etapa 1]
     line_follower.h     // PID de posição + saturação + mixagem diferencial
     gyro_damper.h       // termo de amortecimento por taxa angular (RF06)
     track_classifier.h  // reta × curva, ganhos adaptativos
     mark_detector.h     // RF02 — stub desativado
   app/
+    entry_points.h      // despacho APP_TARGET_* → appSetup/appLoop     [etapa 1]
+    robot_app.h         // ponto de entrada do firmware completo        [etapa 1]
+    serial_mutex.h      // exclusão mútua da serial entre tarefas       [etapa 1]
     robot_state.h       // structs compartilhados entre tasks
     supervisor.h        // máquina de estados
     telemetry.h         // agregação e serialização
@@ -132,11 +135,11 @@ include/
     ws_server.h
     protocol.h          // esquema das mensagens JSON
   test/
-    test_led.h  test_motors.h  test_imu.h  test_ir.h
-    test_wifi.h  test_control.h
+    test_led.h  test_motors.h  test_imu.h  test_ir.h                    [etapa 1]
+    test_wifi.h  test_control.h                                         [etapa 1]
 src/
   <espelha include/>
-  main.cpp              // só escolhe entre app e rotina de teste
+  main.cpp              // só chama appSetup/appLoop                    [etapa 1]
 data/
   index.html            // dashboard servido do LittleFS
 docs/
@@ -544,43 +547,39 @@ flags e `lib_deps` diferentes por teste, e o comando de build é auto-documentad
 ### 8.1 Seleção por ambiente
 
 ```ini
+[platformio]
+default_envs = firmware
+
 [env]
 platform = espressif32
 board = esp32doit-devkit-v1
 framework = arduino
-monitor_speed = 115200
 upload_port = /dev/ttyUSB0
+monitor_speed = 115200
+build_flags = -Wall
 
 [env:firmware]
-build_flags = -D APP_TARGET_MAIN
-build_src_filter = +<*> -<test/>
-
-[env:test_led]
-build_flags = -D APP_TARGET_TEST_LED
-build_src_filter = +<main.cpp> +<test/test_led.cpp> +<hal/status_led.cpp>
+build_flags = ${env.build_flags} -D APP_TARGET_MAIN
+lib_deps = MPU6050
+build_src_filter = -<*> +<main.cpp> +<app/robot_app.cpp>
 
 [env:test_motors]
-build_flags = -D APP_TARGET_TEST_MOTORS
-build_src_filter = +<main.cpp> +<test/test_motors.cpp> +<hal/motor_driver.cpp>
+build_flags = ${env.build_flags} -D APP_TARGET_TEST_MOTORS
+build_src_filter = -<*> +<main.cpp> +<test/test_motors.cpp>
 
 [env:test_ir]
-build_flags = -D APP_TARGET_TEST_IR
+build_flags = ${env.build_flags} -D APP_TARGET_TEST_IR
 monitor_filters = direct
-build_src_filter = +<main.cpp> +<test/test_ir.cpp> +<hal/ir_array.cpp>
+build_src_filter = -<*> +<main.cpp> +<test/test_ir.cpp>
 
-[env:test_imu]
-build_flags = -D APP_TARGET_TEST_IMU
-lib_deps = MPU6050
-build_src_filter = +<main.cpp> +<test/test_imu.cpp> +<hal/imu.cpp>
-
-[env:test_wifi]
-build_flags = -D APP_TARGET_TEST_WIFI
-build_src_filter = +<main.cpp> +<test/test_wifi.cpp> +<net/>
-
-[env:test_control]
-build_flags = -D APP_TARGET_TEST_CONTROL
-build_src_filter = +<main.cpp> +<test/test_control.cpp> +<hal/> +<control/>
+; ... idem para test_led, test_imu, test_wifi e test_control
 ```
+
+Os `build_src_filter` crescem junto com o roteiro: a etapa 2 acrescenta os
+arquivos de `hal/` aos ambientes que os usam, a etapa 3 acrescenta `control/`,
+e assim por diante. Cada ambiente compila exatamente o que exercita — o binário
+de `test_led` não contém driver de motor, e nenhum teste contém o servidor
+WebSocket.
 
 E o `main.cpp` fica reduzido a um despachante:
 
@@ -688,11 +687,20 @@ credenciais de Wi-Fi.
 
 Ordem pensada para que cada etapa seja testável sozinha antes da seguinte depender dela.
 
-**Etapa 1 — Fundação**
-1. Reorganizar diretórios conforme 3.1; mover os testes existentes.
-2. Criar `config/board_pins.h`, `robot_config.h`, `features.h`.
-3. Reescrever `platformio.ini` com os ambientes de 8.1.
-4. Validar: `test_led` e `test_motors` compilam e rodam nos novos ambientes.
+**Etapa 1 — Fundação** ✅ concluída
+1. ✅ Reorganizar diretórios conforme 3.1; mover os testes existentes.
+2. ✅ Criar `config/board_pins.h`, `robot_config.h`, `features.h`.
+3. ✅ Reescrever `platformio.ini` com os ambientes de 8.1.
+4. ✅ Validar: os sete ambientes compilam sem warnings com `-Wall`.
+
+   Correções feitas no caminho: `TestMotors` definia `testMotorSetup` enquanto o
+   cabeçalho declarava `testMotorsSetup`, e o teste nunca teria linkado; o teste
+   de IR passou dos 8 canais (quatro em ADC2) para os 6 de ADC1, o que tornou
+   desnecessário o `WiFi.mode(WIFI_OFF)`; o teste de IMU passou o fundo de escala
+   do giroscópio de ±250 para ±500 °/s.
+
+   Pendente de bancada: rodar `test_led` e `test_motors` na placa para confirmar
+   qual lado físico responde a qual canal do driver e medir a zona morta.
 
 **Etapa 2 — HAL**
 5. `MotorDriver` sobre LEDC, com `setSpeed(left, right)` em `[-1, 1]` e trava de segurança.

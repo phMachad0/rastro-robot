@@ -1,0 +1,745 @@
+# Arquitetura de Firmware — Robô Seguidor de Linha
+
+> **Status:** plano de arquitetura. Nada implementado ainda — este documento é o
+> contrato que a implementação deve seguir.
+>
+> **Plataforma:** ESP32 (DOIT DevKit v1) · PlatformIO · framework Arduino sobre FreeRTOS
+> **Periféricos:** 4 motores DC via driver L298N (canais compartilhados por lado),
+> array de sensores IR QTR-8A, IMU MPU-6050 (I2C), Wi-Fi para telemetria e controle.
+
+---
+
+## 1. Requisitos e como a arquitetura os atende
+
+| ID | Requisito | Onde é atendido |
+|----|-----------|-----------------|
+| RF01 | Navegação autônoma por linha (linha **branca** sobre fundo escuro) | `TaskLineSensor` + `TaskControl` (PID) |
+| RF02 | Detecção de marcações laterais | `MarkDetector` — **desativado** atrás de `FEATURE_LATERAL_MARKS` |
+| RF03 | Execução de parada | `TaskSupervisor`, estado `STOPPED` |
+| RF04 | Retomada de percurso | `ResumePolicy` — por contagem de marcações **ou** por tempo |
+| RF05 | Telemetria e monitoramento remoto via Wi-Fi | `TaskTelemetry` + `TaskNet` (WebSocket) |
+| RF06 | Controle de estabilidade angular (giroscópio) | `GyroDamper` dentro de `TaskControl` |
+
+### Decisões de projeto já tomadas
+
+1. **Array IR com 6 canais, todos em ADC1.** O ESP32 não consegue usar o ADC2
+   enquanto o Wi-Fi está ativo, e o Wi-Fi é requisito (RF05). Os 8 canais do
+   QTR-8A não cabem nos 6 pinos de ADC1 disponíveis, então usamos 6 sensores e
+   deixamos 2 canais das pontas desconectados. Seis sensores dão resolução
+   espacial suficiente com interpolação de posição.
+2. **MPU-6050 com dois papéis:** amortecer o zigue-zague em reta (RF06) e
+   classificar trecho reto × curva para adaptar ganhos e velocidade base.
+3. **Dashboard:** servidor HTTP + WebSocket embarcado no ESP32. O PC só precisa
+   de um navegador; o canal é bidirecional (telemetria descendo, comandos subindo).
+4. **Parada/retomada:** política dupla. Com marcações laterais habilitadas, a
+   contagem de marcações governa o ciclo; sem elas, o ciclo é governado por tempo.
+5. **Marcação lateral desacoplada.** `FEATURE_LATERAL_MARKS = 0` por padrão. A
+   interface existe, a implementação é um stub, e nenhum outro módulo depende dela
+   para funcionar.
+
+---
+
+## 2. Mapa de pinos
+
+Orçamento de GPIO fechado, já considerando a restrição do ADC2.
+
+| Função | GPIO | Observações |
+|--------|------|-------------|
+| **Motores (L298N)** | | |
+| `ENA` — PWM lado esquerdo | 19 | LEDC canal 0 |
+| `IN1` — direção esquerda A | 18 | |
+| `IN2` — direção esquerda B | 5 | ⚠️ pino de *strapping* (deve estar HIGH no boot); manter o L298N desenergizado ou com pull-up durante o reset |
+| `ENB` — PWM lado direito | 4 | LEDC canal 1 |
+| `IN3` — direção direita A | 17 | |
+| `IN4` — direção direita B | 16 | |
+| **Array IR (QTR-8A, 6 canais, ADC1)** | | ordem física esquerda → direita |
+| `IR0` | 36 | input-only (SVP) |
+| `IR1` | 39 | input-only (SVN) |
+| `IR2` | 34 | input-only |
+| `IR3` | 35 | input-only |
+| `IR4` | 32 | |
+| `IR5` | 33 | |
+| **IMU (MPU-6050)** | | |
+| `SDA` | 21 | I2C0 @ 400 kHz |
+| `SCL` | 22 | |
+| `MPU_INT` | 23 | **interrupção de data-ready** |
+| **Diversos** | | |
+| `LED_STATUS` | 2 | LED da placa |
+| `BTN_START` | 13 | botão com pull-up interno, **interrupção** por borda de descida |
+
+Pinos livres para expansão futura: 12, 14, 15, 25, 26, 27 (os quatro últimos são
+ADC2 — só servem como digitais enquanto o Wi-Fi estiver ligado).
+
+> ⚠️ **Erratum conhecido:** GPIO36 e GPIO39 podem apresentar glitches de leitura
+> quando o sensor Hall / ULP é usado. Não usamos nenhum dos dois, então não há
+> problema, mas vale registrar caso apareça ruído inexplicado nesses dois canais.
+
+> ⚠️ **Alimentação:** o QTR-8A vai em **3V3**, nunca em 5V — o ADC do ESP32 não
+> tolera mais que ~3.3 V na entrada.
+
+---
+
+## 3. Camadas
+
+A arquitetura tem quatro camadas. A regra é que dependências só apontam para
+baixo: nenhum driver conhece a aplicação, e o controle não conhece a rede.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  net/        WiFiManager · WebServer · WsProtocol        │  Camada de comunicação
+├──────────────────────────────────────────────────────────┤
+│  app/        Supervisor (FSM) · Telemetry · RobotState   │  Camada de aplicação
+├──────────────────────────────────────────────────────────┤
+│  control/    PidAlgorithm · LineFollower · GyroDamper    │  Camada de controle
+│              TrackClassifier · MarkDetector (stub)       │
+├──────────────────────────────────────────────────────────┤
+│  hal/        MotorDriver · IrArray · Imu · StatusLed     │  Camada de hardware
+├──────────────────────────────────────────────────────────┤
+│  config/     board_pins.h · robot_config.h · features.h  │  Configuração
+└──────────────────────────────────────────────────────────┘
+```
+
+**Por que essa separação importa aqui:** as rotinas de teste (seção 8) compilam
+contra `hal/` e `control/` sem arrastar `app/` nem `net/`. Sem essa fronteira, um
+teste de motor acabaria puxando o servidor WebSocket junto.
+
+### 3.1 Estrutura de diretórios proposta
+
+```
+include/
+  config/
+    board_pins.h        // mapa de pinos da seção 2
+    robot_config.h      // ganhos, períodos, limites, velocidades
+    features.h          // flags de compilação (FEATURE_LATERAL_MARKS, ...)
+  hal/
+    motor_driver.h      // abstração dos 2 lados; setSpeed(left, right) em [-1..1]
+    ir_array.h          // leitura bruta, calibração, posição da linha
+    imu.h               // wrapper do MPU6050 + ISR de data-ready
+    status_led.h
+  control/
+    pid_algorithm.h     // JÁ EXISTE — reaproveitado
+    line_follower.h     // PID de posição + saturação + mixagem diferencial
+    gyro_damper.h       // termo de amortecimento por taxa angular (RF06)
+    track_classifier.h  // reta × curva, ganhos adaptativos
+    mark_detector.h     // RF02 — stub desativado
+  app/
+    robot_state.h       // structs compartilhados entre tasks
+    supervisor.h        // máquina de estados
+    telemetry.h         // agregação e serialização
+    tasks.h             // criação e prioridades das tasks
+  net/
+    wifi_manager.h
+    ws_server.h
+    protocol.h          // esquema das mensagens JSON
+  test/
+    test_led.h  test_motors.h  test_imu.h  test_ir.h
+    test_wifi.h  test_control.h
+src/
+  <espelha include/>
+  main.cpp              // só escolhe entre app e rotina de teste
+data/
+  index.html            // dashboard servido do LittleFS
+docs/
+  ARQUITETURA.md        // este documento
+```
+
+Os arquivos atuais (`TestLed`, `TestMotors`, `TestI2C`, `testSensorIR`) migram
+para `src/test/` com os nomes acima. `pid_algorithm.{h,cpp}` vai para `control/`
+praticamente como está.
+
+---
+
+## 4. Modelo de tarefas (FreeRTOS)
+
+O ESP32 tem dois núcleos, e a divisão é deliberada: **núcleo 1 roda o laço de
+controle e nada mais**; **núcleo 0 roda rede, telemetria e supervisão**. Isso
+garante que uma reconexão de Wi-Fi ou um cliente WebSocket lento não consigam
+introduzir jitter na malha de controle.
+
+| Task | Núcleo | Prioridade | Stack | Período / gatilho |
+|------|--------|-----------|-------|-------------------|
+| `TaskImu` | 1 | 5 | 3072 B | **ISR de data-ready do MPU** (200 Hz) |
+| `TaskLineSensor` | 1 | 4 | 3072 B | **ISR de timer de hardware** (500 Hz) |
+| `TaskControl` | 1 | 3 | 4096 B | `vTaskDelayUntil`, 250 Hz (4 ms) |
+| `TaskSupervisor` | 0 | 3 | 4096 B | `vTaskDelayUntil`, 50 Hz (20 ms) |
+| `TaskTelemetry` | 0 | 2 | 4096 B | `vTaskDelayUntil`, 20 Hz (50 ms) |
+| `TaskNet` | 0 | 2 | 8192 B | fila de eventos + housekeeping 5 Hz |
+
+> As tasks sensoriais têm prioridade **acima** do controle de propósito: elas são
+> curtas e precisam entregar a amostra fresca antes do controle acordar. Se
+> `TaskControl` tivesse prioridade maior, leria dados de um ciclo atrasado.
+
+### 4.1 Fluxo de dados
+
+```mermaid
+flowchart TD
+    subgraph ISR["Contexto de interrupção"]
+        T0["Timer HW 500 Hz"]
+        I0["MPU INT — data ready"]
+        B0["BTN_START — borda"]
+    end
+
+    subgraph C1["Núcleo 1 — tempo real"]
+        TL["TaskLineSensor<br/>amostra 6 canais ADC1<br/>normaliza + calcula posição"]
+        TI["TaskImu<br/>lê gyro/accel via I2C<br/>remove bias + filtra"]
+        TC["TaskControl 250 Hz<br/>PID + GyroDamper<br/>+ TrackClassifier"]
+        MD["MotorDriver<br/>LEDC PWM"]
+    end
+
+    subgraph C0["Núcleo 0 — melhor esforço"]
+        TS["TaskSupervisor<br/>máquina de estados"]
+        TT["TaskTelemetry<br/>snapshot + serialização"]
+        TN["TaskNet<br/>HTTP + WebSocket"]
+    end
+
+    T0 -->|vTaskNotifyGiveFromISR| TL
+    I0 -->|vTaskNotifyGiveFromISR| TI
+    B0 -->|xQueueSendFromISR| TS
+
+    TL -->|mailbox LineState| TC
+    TI -->|mailbox ImuState| TC
+    TL -->|mailbox LineState| TS
+    TI -->|mailbox ImuState| TS
+
+    TS -->|event group MODE| TC
+    TC --> MD
+
+    TL -.->|mailbox| TT
+    TI -.->|mailbox| TT
+    TC -.->|mailbox ControlState| TT
+    TS -.->|mailbox RobotMode| TT
+
+    TT -->|fila qTelemetry| TN
+    TN -->|fila qCommands| TS
+```
+
+### 4.2 Primitivas de sincronização
+
+O padrão dominante é **mailbox**: uma fila de profundidade 1 escrita com
+`xQueueOverwrite` e lida com `xQueuePeek`. O produtor nunca bloqueia, o consumidor
+sempre pega o valor mais recente, e não existe risco de leitura rasgada de um
+struct multi-campo. Para dados de sensor de alta taxa isso é o certo — ninguém
+quer processar uma amostra de posição de linha de 40 ms atrás porque ela ficou
+enfileirada.
+
+| Primitiva | Nome | Tipo | Papel |
+|-----------|------|------|-------|
+| Mailbox | `mbLineState` | `xQueueOverwrite` prof. 1 | `TaskLineSensor` → `TaskControl`, `TaskSupervisor`, `TaskTelemetry` |
+| Mailbox | `mbImuState` | `xQueueOverwrite` prof. 1 | `TaskImu` → idem |
+| Mailbox | `mbControlState` | `xQueueOverwrite` prof. 1 | `TaskControl` → `TaskTelemetry` |
+| Mailbox | `mbRobotMode` | `xQueueOverwrite` prof. 1 | `TaskSupervisor` → `TaskTelemetry` |
+| Fila | `qCommands` (prof. 8) | `xQueueSend` | `TaskNet` / ISR do botão → `TaskSupervisor` |
+| Fila | `qTelemetry` (prof. 4) | `xQueueSend` | `TaskTelemetry` → `TaskNet` |
+| Event group | `egRobotMode` | bits `RUN`, `STOP`, `CALIB`, `FAULT` | `TaskSupervisor` → `TaskControl` (mudança de modo sem polling) |
+| Mutex | `mxI2C` | `xSemaphoreCreateMutex` | serializa o barramento I2C entre `TaskImu` e qualquer outro consumidor futuro |
+| Mutex | `mxParams` | `xSemaphoreCreateMutex` | protege os ganhos de PID enquanto o dashboard os reescreve em tempo de execução |
+| Notificação | direta à task | `vTaskNotifyGiveFromISR` | ISRs acordando `TaskImu` e `TaskLineSensor` |
+
+**Nota sobre `mxParams`:** o ajuste de PID pelo dashboard acontece no núcleo 0
+enquanto o controle roda no núcleo 1. `TaskControl` pega o mutex com timeout zero
+e, se falhar, simplesmente reusa a cópia local dos ganhos daquele ciclo. O controle
+nunca bloqueia por causa da rede.
+
+### 4.3 Interrupções
+
+Três fontes, todas com ISR mínima (`IRAM_ATTR`, sem alocação, sem `Serial`, sem I2C):
+
+1. **`MPU_INT` (GPIO 23) — data-ready do MPU-6050.** É a interrupção "de sensor"
+   principal. O MPU é configurado com `setRate()` para 200 Hz e
+   `setIntDataReadyEnabled(true)`. A ISR só faz `vTaskNotifyGiveFromISR(hTaskImu)`.
+   A leitura I2C acontece na task, nunca na ISR. Vantagem sobre polling: a amostra
+   é lida assim que existe, com jitter mínimo, e o intervalo `dt` da integração do
+   giroscópio fica constante — o que importa muito para o termo de amortecimento.
+
+2. **Timer de hardware 0 — cadência de amostragem do array IR (500 Hz).**
+   `timerAttachInterrupt` + `vTaskNotifyGiveFromISR(hTaskLineSensor)`. O ADC é lido
+   na task. Isso desacopla a taxa de amostragem do escalonador e evita o `delay(100)`
+   que o teste atual usa.
+
+3. **`BTN_START` (GPIO 13) — borda de descida com debounce por timestamp na ISR.**
+   `xQueueSendFromISR(qCommands, CMD_TOGGLE_RUN)`. Serve para armar/desarmar o robô
+   sem depender do Wi-Fi.
+
+---
+
+## 5. Camada de controle
+
+### 5.1 Posição da linha
+
+O QTR-8A é analógico e a pista é **linha branca sobre fundo escuro**, ou seja, o
+sinal é invertido em relação ao caso mais comum. A cadeia é:
+
+1. **Amostragem:** 6 canais × 4 leituras, média simples (o teste atual já faz isso
+   com 8 amostras; 4 basta a 500 Hz).
+2. **Calibração:** para cada canal, guardar `min` e `max` observados durante a rotina
+   de calibração (robô varrendo a linha por alguns segundos). Normalizar para
+   `[0, 1000]`.
+3. **Inversão:** como a linha é clara, o valor normalizado de "está sobre a linha"
+   é o **baixo** na leitura bruta. `w[i] = 1000 - normalizado[i]`.
+4. **Posição:** média ponderada
+   `pos = Σ(i · 1000 · w[i]) / Σ(w[i])`, dando `0` (extrema esquerda) a `5000`
+   (extrema direita) para 6 sensores. O setpoint é o centro, `2500`.
+5. **Linha perdida:** se `Σ(w[i])` cai abaixo de um limiar, marca `lineLost = true`
+   e mantém a última posição válida — `TaskControl` então faz busca (seção 5.5).
+
+Os valores de calibração são persistidos em **NVS** para não recalibrar a cada boot,
+com um comando no dashboard para forçar recalibração.
+
+### 5.2 PID de linha
+
+Reaproveita a classe `PidAlgorithm` existente, com três ajustes necessários:
+
+- **`dt` explícito.** A implementação atual soma o erro direto no integrador e usa
+  a diferença bruta como derivada, assumindo passo fixo implícito. Com `TaskControl`
+  a 250 Hz o passo é fixo de fato (4 ms), mas passar `dt` deixa o ganho independente
+  da taxa e permite mudar a taxa sem reajustar tudo.
+- **Anti-windup.** Saturar o integrador e congelá-lo quando a saída está saturada.
+  Sem isso, o robô que perde a linha numa curva acumula integral e sai girando.
+- **Bug a corrigir:** o construtor em [pid_algorithm.cpp:27](../src/pid_algorithm.cpp:27)
+  zera `last_error[i]` para `i < DERIV_AUX_MAX + 1`, mas o array tem exatamente
+  `DERIV_AUX_MAX` posições — é uma escrita fora dos limites. Corrigir na migração.
+
+A saída do PID é a **ação diferencial** `u`, e a mixagem para os dois lados é:
+
+```
+left  = baseSpeed + u
+right = baseSpeed - u
+```
+
+com saturação simétrica que preserva a diferença (se um lado satura, o outro é
+reduzido na mesma medida, em vez de cortar a curva).
+
+### 5.3 Amortecimento por giroscópio — RF06
+
+O problema do zigue-zague é clássico: o array IR dá uma medida **discreta e ruidosa**
+da posição, então o termo derivativo calculado sobre ela precisa de um `Kd` alto que
+amplifica ruído, ou de um `Kd` baixo que não amortece. O giroscópio resolve isso
+porque mede diretamente a grandeza que queremos amortecer — a velocidade angular do
+chassi — de forma contínua e com pouco ruído.
+
+A lei de controle passa a ser:
+
+```
+u = Kp·e + Ki·∫e·dt + Kd·(de/dt) − Kg·ωz
+```
+
+onde `ωz` é a taxa de guinada em °/s vinda do MPU-6050. O sinal negativo é o que
+faz o amortecimento: se o robô está girando para a direita, o termo subtrai da ação
+e freia a rotação. Na prática, com `Kg` bem ajustado dá para **reduzir muito o `Kd`
+do IR**, que é justamente a fonte do ruído. É um amortecimento de velocidade real,
+não uma derivada numérica de um sinal quantizado.
+
+Pré-processamento obrigatório do `ωz`:
+
+- **Remoção de bias:** média de ~500 amostras com o robô parado, na inicialização,
+  subtraída de toda leitura. O MPU-6050 tem drift de offset significativo e sem isso
+  o robô desenvolve uma tendência lateral constante.
+- **Filtro passa-baixa:** DLPF do próprio MPU em ~42 Hz, mais um IIR de primeira
+  ordem no firmware se ainda houver ruído.
+- **Fundo de escala:** `MPU6050_GYRO_FS_500` (±500 °/s). O ±250 do teste atual satura
+  em curva fechada num robô rápido.
+
+### 5.4 Classificador reta × curva e ganhos adaptativos
+
+Um seguidor de linha com ganho único é ou lento na reta ou instável na curva. Com o
+giroscópio dá para saber em qual dos dois regimes o robô está e trocar os parâmetros.
+
+O classificador mantém a média móvel de `|ωz|` numa janela de ~150 ms e aplica
+**histerese** (dois limiares, não um) para não ficar oscilando entre os regimes:
+
+| Regime | Condição | Ação |
+|--------|----------|------|
+| `STRAIGHT` | `|ωz|_méd < θ_baixo` por N ciclos | sobe `baseSpeed`, reduz `Kp`, aumenta `Kg` |
+| `CURVE` | `|ωz|_méd > θ_alto` | reduz `baseSpeed`, aumenta `Kp`, reduz `Kg` |
+
+A transição entre os conjuntos de ganhos é **interpolada** ao longo de alguns ciclos,
+não abrupta — degrau de ganho em malha fechada gera solavanco.
+
+Todos os limiares e os dois conjuntos de ganhos são ajustáveis pelo dashboard em
+tempo de execução, o que torna a sintonia um processo de minutos em vez de um ciclo
+de recompilar-e-regravar a cada tentativa.
+
+### 5.5 Recuperação de linha perdida
+
+Quando `lineLost` fica verdadeiro, `TaskControl` entra numa busca simples: mantém a
+última ação diferencial conhecida (o robô estava virando para algum lado quando
+perdeu a linha, então continua virando para lá) com velocidade base reduzida, por no
+máximo `LINE_LOST_TIMEOUT_MS`. Estourando o timeout, o supervisor leva o robô para
+`FAULT` e para os motores.
+
+---
+
+## 6. Máquina de estados (TaskSupervisor)
+
+```mermaid
+stateDiagram-v2
+    [*] --> BOOT
+    BOOT --> CALIBRATING: auto-teste OK
+    BOOT --> FAULT: IMU/IR ausentes
+
+    CALIBRATING --> IDLE: calibração IR + bias do giro concluídos
+    note right of CALIBRATING
+      Calibração do array IR e
+      do bias do giroscópio.
+      Motores travados.
+    end note
+
+    IDLE --> RUNNING: CMD_START (botão ou dashboard)
+    RUNNING --> STOPPED: gatilho de parada (RF03)
+    STOPPED --> RUNNING: política de retomada satisfeita (RF04)
+
+    RUNNING --> FAULT: linha perdida > timeout
+    STOPPED --> IDLE: CMD_STOP
+    RUNNING --> IDLE: CMD_STOP
+    FAULT --> IDLE: CMD_RESET
+```
+
+`TaskControl` observa `egRobotMode` e só aciona os motores em `RUNNING`. Em qualquer
+outro estado a saída é forçada a zero — a parada é feita na camada que aciona os
+motores, não por convenção entre tasks.
+
+### 6.1 Gatilho de parada e política de retomada (RF03/RF04)
+
+O ciclo parar–retomar é encapsulado numa interface `StopPolicy` com duas
+implementações selecionadas em tempo de compilação:
+
+```cpp
+// control/stop_policy.h
+class StopPolicy {
+ public:
+  virtual bool shouldStop(const RobotState& s) = 0;   // RF03
+  virtual bool shouldResume(const RobotState& s) = 0; // RF04
+  virtual void onLapEvent() = 0;
+};
+```
+
+| Implementação | Ativa quando | `shouldStop` | `shouldResume` |
+|---------------|--------------|--------------|----------------|
+| `MarkCountPolicy` | `FEATURE_LATERAL_MARKS == 1` | contagem de marcações atinge `LAPS_TARGET` | contagem de marcações após a parada atinge o alvo seguinte |
+| `TimedPolicy` (**padrão**) | `FEATURE_LATERAL_MARKS == 0` | tempo em `RUNNING` ≥ `RUN_DURATION_MS` | tempo em `STOPPED` ≥ `STOP_DURATION_MS` |
+
+Ambos os tempos e o alvo de voltas são parâmetros expostos no dashboard e
+persistidos em NVS. Trocar de política não toca em nenhum outro módulo — é essa a
+razão da interface existir mesmo com uma das duas desligada.
+
+### 6.2 RF02 — marcação lateral, desacoplada
+
+`FEATURE_LATERAL_MARKS` é `0` por padrão. Com a flag em zero:
+
+- `MarkDetector::update()` é um stub que não faz nada e sempre devolve "sem marcação";
+- `MarkCountPolicy` nem é compilada;
+- nenhum sensor adicional é alocado, nenhum pino é reservado;
+- a telemetria envia `lapCount: null`, e o dashboard esconde o painel de voltas.
+
+Quando e se a funcionalidade for implementada, o caminho é: dedicar 1 ou 2 dos canais
+das pontas do array (ou um sensor IR lateral extra em um dos pinos livres) e
+implementar `MarkDetector` como um detector de borda com debounce espacial. A única
+mudança fora do módulo é ligar a flag.
+
+---
+
+## 7. Camada de rede — dashboard Wi-Fi (RF05)
+
+### 7.1 Topologia
+
+O ESP32 roda em **modo STA** conectado à rede local (com fallback para **AP** com
+SSID próprio se a conexão falhar em `WIFI_CONNECT_TIMEOUT_MS` — indispensável no
+laboratório, onde a rede da instituição costuma ser hostil a dispositivos novos).
+
+Componentes:
+
+- **`ESPAsyncWebServer`** servindo o dashboard (`index.html` + CSS + JS) a partir do
+  **LittleFS**, gravado com `pio run -t uploadfs`.
+- **`AsyncWebSocket`** em `/ws`, canal bidirecional único.
+- **mDNS** respondendo em `http://rastro.local` para não depender de descobrir o IP.
+
+O `AsyncWebServer` roda no próprio contexto do stack TCP/IP; `TaskNet` faz apenas a
+ponte entre as filas do firmware e os callbacks do WebSocket, e o housekeeping de
+reconexão.
+
+### 7.2 Protocolo
+
+JSON sobre WebSocket. Compacto o suficiente para 20 msg/s sem pressionar a heap, e
+legível o bastante para depurar com o navegador aberto.
+
+**Telemetria (ESP32 → PC), 20 Hz nominal:**
+
+```jsonc
+{
+  "t": 123456,              // millis()
+  "mode": "RUNNING",        // estado da FSM
+  "line": {
+    "pos": 2480,            // 0..5000, setpoint 2500
+    "err": 20,
+    "lost": false,
+    "raw": [120, 340, 890, 910, 350, 130]
+  },
+  "imu": {
+    "gz": -3.2,             // °/s, com bias removido
+    "heading": 12.4,        // ângulo integrado, °
+    "ax": 0.02, "ay": 0.98
+  },
+  "ctrl": {
+    "u": 0.14,              // ação diferencial
+    "p": 0.10, "i": 0.01, "d": 0.02, "g": -0.01,  // contribuição de cada termo
+    "left": 0.62, "right": 0.34,
+    "regime": "STRAIGHT"
+  },
+  "lapCount": null,         // null enquanto RF02 estiver desligado
+  "health": { "heap": 184320, "rssi": -58, "loopHz": 249 }
+}
+```
+
+O campo `ctrl` traz a **contribuição de cada termo separada**, não só a saída total.
+Sintonizar PID vendo só `u` é adivinhação; vendo P, I, D e G lado a lado dá para
+identificar na hora qual termo está dominando ou explodindo.
+
+**Comandos (PC → ESP32):**
+
+```jsonc
+{ "cmd": "start" }
+{ "cmd": "stop" }
+{ "cmd": "reset" }
+{ "cmd": "calibrate" }
+{ "cmd": "set_pid", "regime": "straight", "kp": 0.8, "ki": 0.0, "kd": 0.05, "kg": 0.3 }
+{ "cmd": "set_speed", "base": 0.55 }
+{ "cmd": "set_policy", "runMs": 30000, "stopMs": 3000 }
+{ "cmd": "save" }        // persiste os parâmetros correntes em NVS
+{ "cmd": "telemetry_rate", "hz": 50 }
+```
+
+### 7.3 Dashboard
+
+Página única, sem dependências externas (tudo embarcado no LittleFS — não há internet
+garantida no laboratório):
+
+- **Gráfico rolante** de posição da linha, erro e `ωz` no tempo;
+- **Barras** dos 6 canais IR crus e normalizados — o mesmo que o teste serial atual
+  mostra, mas sem fio;
+- **Indicadores** de modo, regime (reta/curva), PWM de cada lado, heap, RSSI;
+- **Controles** de start/stop/reset/calibrar;
+- **Sliders** de Kp/Ki/Kd/Kg por regime e de velocidade base, com botão "salvar em NVS";
+- **Botão de gravar sessão** exportando CSV do buffer para análise posterior.
+
+### 7.4 Isolamento de falhas
+
+Requisito firme: **nenhuma falha de rede pode afetar o controle**. Concretamente:
+
+- Todo o código de rede vive no núcleo 0;
+- `TaskTelemetry` escreve em `qTelemetry` com timeout **zero** — fila cheia significa
+  amostra descartada, nunca task bloqueada;
+- Perda de Wi-Fi não muda o estado da FSM; o robô continua o percurso;
+- Comandos chegam por fila, aplicados só em pontos seguros do ciclo do supervisor;
+- Reconexão com backoff exponencial, sem `delay()` bloqueante.
+
+---
+
+## 8. Rotinas de teste compiláveis separadamente
+
+Cada componente tem uma rotina independente, selecionada por **ambiente do PlatformIO**.
+Isso é melhor que comentar linhas no `main.cpp` (o que o projeto faz hoje) por três
+motivos: o binário de teste não carrega o código do firmware completo, dá para ter
+flags e `lib_deps` diferentes por teste, e o comando de build é auto-documentado.
+
+### 8.1 Seleção por ambiente
+
+```ini
+[env]
+platform = espressif32
+board = esp32doit-devkit-v1
+framework = arduino
+monitor_speed = 115200
+upload_port = /dev/ttyUSB0
+
+[env:firmware]
+build_flags = -D APP_TARGET_MAIN
+build_src_filter = +<*> -<test/>
+
+[env:test_led]
+build_flags = -D APP_TARGET_TEST_LED
+build_src_filter = +<main.cpp> +<test/test_led.cpp> +<hal/status_led.cpp>
+
+[env:test_motors]
+build_flags = -D APP_TARGET_TEST_MOTORS
+build_src_filter = +<main.cpp> +<test/test_motors.cpp> +<hal/motor_driver.cpp>
+
+[env:test_ir]
+build_flags = -D APP_TARGET_TEST_IR
+monitor_filters = direct
+build_src_filter = +<main.cpp> +<test/test_ir.cpp> +<hal/ir_array.cpp>
+
+[env:test_imu]
+build_flags = -D APP_TARGET_TEST_IMU
+lib_deps = MPU6050
+build_src_filter = +<main.cpp> +<test/test_imu.cpp> +<hal/imu.cpp>
+
+[env:test_wifi]
+build_flags = -D APP_TARGET_TEST_WIFI
+build_src_filter = +<main.cpp> +<test/test_wifi.cpp> +<net/>
+
+[env:test_control]
+build_flags = -D APP_TARGET_TEST_CONTROL
+build_src_filter = +<main.cpp> +<test/test_control.cpp> +<hal/> +<control/>
+```
+
+E o `main.cpp` fica reduzido a um despachante:
+
+```cpp
+#include <Arduino.h>
+#include "app/entry_points.h"
+
+void setup() { appSetup(); }   // resolvido em tempo de compilação pela flag
+void loop()  { appLoop();  }
+```
+
+Comandos:
+
+```bash
+pio run -e test_ir -t upload && pio device monitor -e test_ir
+```
+
+### 8.2 Escopo de cada rotina
+
+| Ambiente | O que exercita | Como visualizar |
+|----------|----------------|-----------------|
+| `test_led` | GPIO básico, prova que a placa grava e roda | LED da placa |
+| `test_motors` | LEDC PWM, sentido de rotação, faixa útil de duty, e **qual lado é qual** | Serial Monitor + observação |
+| `test_ir` | 6 canais ADC1, calibração, cálculo de posição | Gráfico de barras ANSI (já existe) + Serial Plotter |
+| `test_imu` | I2C, **interrupção de data-ready**, bias, taxa efetiva em Hz | Serial Plotter (`gz`, `heading`) |
+| `test_wifi` | conexão STA, fallback AP, mDNS, WebSocket com telemetria sintética | Navegador + Serial Monitor |
+| `test_control` | malha fechada com motores **desabilitados**: imprime a ação do PID sem mover o robô | Serial Plotter (erro, `u`, termos) |
+
+### 8.3 Formatos de saída serial
+
+Duas saídas, escolhidas por `#define` dentro de cada teste:
+
+- **Serial Plotter** (Arduino IDE / extensão Teleplot do VSCode): `rótulo:valor` separado
+  por tabulação, uma linha por amostra. É o formato que o `testSensorIR.cpp` já
+  implementa em `printPlotter()`.
+- **Gráfico ANSI no terminal**: redesenho no mesmo lugar, como `printBarChart()` já faz.
+  Exige `monitor_filters = direct` no ambiente, senão os códigos de escape aparecem
+  como lixo — está documentado no cabeçalho do arquivo atual e deve continuar.
+
+**Regra de ouro:** nenhum `Serial.print` dentro de ISR, e nenhum em `TaskControl`.
+No firmware completo, todo log passa por `TaskTelemetry`. O `SerialMutex.h` que já
+existe no projeto serve para as rotinas de teste que tiverem mais de uma task
+imprimindo.
+
+---
+
+## 9. Configuração e persistência
+
+`config/robot_config.h` centraliza tudo que é ajustável, com os valores de compilação
+servindo apenas de **padrão de fábrica** — os valores efetivos vêm da NVS, e o
+dashboard os reescreve em tempo de execução.
+
+```cpp
+// valores de partida, a serem sintonizados na pista
+namespace cfg {
+  constexpr uint32_t CONTROL_HZ        = 250;
+  constexpr uint32_t IR_SAMPLE_HZ      = 500;
+  constexpr uint32_t IMU_SAMPLE_HZ     = 200;
+  constexpr uint32_t TELEMETRY_HZ      = 20;
+
+  constexpr float    BASE_SPEED        = 0.50f;   // 0..1
+  constexpr float    MAX_SPEED         = 0.95f;
+
+  // regime reta
+  constexpr float    KP_STRAIGHT       = 0.60f;
+  constexpr float    KI_STRAIGHT       = 0.00f;
+  constexpr float    KD_STRAIGHT       = 0.02f;
+  constexpr float    KG_STRAIGHT       = 0.35f;   // amortecimento por giro
+
+  // regime curva
+  constexpr float    KP_CURVE          = 1.10f;
+  constexpr float    KI_CURVE          = 0.00f;
+  constexpr float    KD_CURVE          = 0.05f;
+  constexpr float    KG_CURVE          = 0.15f;
+
+  constexpr float    GYRO_TH_LOW       = 25.0f;   // °/s — entra em STRAIGHT
+  constexpr float    GYRO_TH_HIGH      = 60.0f;   // °/s — entra em CURVE
+
+  constexpr uint32_t RUN_DURATION_MS   = 30000;   // TimedPolicy
+  constexpr uint32_t STOP_DURATION_MS  = 3000;
+  constexpr uint32_t LINE_LOST_TIMEOUT_MS = 400;
+}
+```
+
+Persistência em NVS (namespace `rastro`): calibração do array IR, bias do giroscópio,
+ganhos dos dois regimes, velocidade base, parâmetros da política de parada,
+credenciais de Wi-Fi.
+
+---
+
+## 10. Segurança operacional
+
+| Risco | Mitigação |
+|-------|-----------|
+| Firmware trava com motores ligados | Task watchdog do ESP32 armado em `TaskControl`; o reset deixa os pinos em alta impedância e o L298N para |
+| `TaskControl` perde o deadline | Contador de deadlines perdidos publicado na telemetria (`loopHz`); degradação visível em vez de silenciosa |
+| Robô sai da pista | `LINE_LOST_TIMEOUT_MS` → estado `FAULT` → motores em zero |
+| Queda de bateria sob carga | Detecção de brownout do ESP32 + log da causa do reset no boot |
+| Comando perigoso pela rede | Comandos só aplicados em `TaskSupervisor`, em pontos seguros do ciclo; `start` nunca é aceito nos estados `FAULT` ou `CALIBRATING` |
+| Motores acionados durante calibração | Saída de motor fisicamente forçada a zero fora de `RUNNING`, na camada do `MotorDriver` |
+
+---
+
+## 11. Roteiro de implementação
+
+Ordem pensada para que cada etapa seja testável sozinha antes da seguinte depender dela.
+
+**Etapa 1 — Fundação**
+1. Reorganizar diretórios conforme 3.1; mover os testes existentes.
+2. Criar `config/board_pins.h`, `robot_config.h`, `features.h`.
+3. Reescrever `platformio.ini` com os ambientes de 8.1.
+4. Validar: `test_led` e `test_motors` compilam e rodam nos novos ambientes.
+
+**Etapa 2 — HAL**
+5. `MotorDriver` sobre LEDC, com `setSpeed(left, right)` em `[-1, 1]` e trava de segurança.
+6. `IrArray` com os 6 canais de ADC1, calibração e cálculo de posição.
+7. `Imu` com interrupção de data-ready, remoção de bias e filtro.
+8. Validar: `test_ir` e `test_imu` mostrando dados coerentes no plotter.
+
+**Etapa 3 — Controle**
+9. Migrar `PidAlgorithm` para `control/`, corrigir o bug de limite do array, adicionar `dt` e anti-windup.
+10. `LineFollower` (PID + mixagem + saturação).
+11. `GyroDamper` e `TrackClassifier`.
+12. Validar: `test_control` com motores desabilitados, conferindo os termos no plotter.
+
+**Etapa 4 — RTOS e aplicação**
+13. Criar as tasks, mailboxes, filas e event group da seção 4.
+14. `Supervisor` com a FSM da seção 6 e a `TimedPolicy`.
+15. Validar: robô segue linha (RF01), para e retoma por tempo (RF03/RF04).
+
+**Etapa 5 — Rede**
+16. `WiFiManager` com STA + fallback AP + mDNS.
+17. Servidor HTTP + WebSocket, `TaskTelemetry` e `TaskNet`.
+18. Dashboard no LittleFS.
+19. Validar: telemetria ao vivo e sintonia de PID pelo navegador (RF05).
+
+**Etapa 6 — Sintonia e refino**
+20. Sintonizar os dois regimes na pista usando o dashboard.
+21. Ajustar `Kg` até eliminar o zigue-zague na reta (RF06).
+22. Persistência em NVS, watchdog, tratamento de falhas.
+
+**Etapa 7 — Opcional, se houver tempo**
+23. Implementar `MarkDetector` e ligar `FEATURE_LATERAL_MARKS` (RF02), trocando para `MarkCountPolicy`.
+
+---
+
+## 12. Pendências e pontos em aberto
+
+- **Sensores das pontas.** Definir quais dois dos oito canais do QTR-8A ficam
+  desconectados. A recomendação é sacrificar as duas pontas externas e manter os seis
+  centrais equidistantes, preservando simetria em torno do eixo do robô.
+- **Frequência de PWM.** Escolher entre ~1 kHz (mais torque em baixa rotação, motor
+  audível) e ~20 kHz (silencioso, pode perder torque). Decidir com o motor na bancada
+  durante a etapa 2.
+- **Zona morta dos motores.** Medir o duty mínimo em que cada lado começa a girar e
+  compensar no `MotorDriver`; sem isso, correções pequenas do PID não produzem
+  movimento nenhum.
+- **Descasamento entre os lados.** Com dois motores por canal, é provável que um lado
+  seja mais rápido que o outro no mesmo duty. Medir e aplicar um fator de trim,
+  ajustável pelo dashboard.
+- **Credenciais de Wi-Fi.** Definir se ficam em `secrets.h` ignorado pelo git ou
+  configuráveis por portal cativo no modo AP.

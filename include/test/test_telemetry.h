@@ -1,7 +1,7 @@
 /**
  * @file test_telemetry.h
  *
- * @brief Pontos de entrada do teste de telemetria MQTT com dados sintéticos.
+ * @brief Pontos de entrada do teste de telemetria MQTT com sensores reais.
  *
  * Ambiente: `pio run -e test_telemetry -t upload`.
  */

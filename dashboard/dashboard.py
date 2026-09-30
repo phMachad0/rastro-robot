@@ -34,7 +34,7 @@ class MQTTTelemetry:
 
     def on_connect(self, client, userdata, flags, reason_code, properties):
         print(f"Connected to MQTT broker: {reason_code}")
-        self.connected = True
+        self.connected = not reason_code.is_failure
         client.subscribe(TOPIC)
 
     def on_disconnect(self, client, userdata, disconnect_flags, reason_code, properties):
@@ -44,10 +44,12 @@ class MQTTTelemetry:
     def on_message(self, client, userdata, msg):
         try:
             data = json.loads(msg.payload.decode("utf-8"))
+            if not isinstance(data, dict) or not isinstance(data.get("ir"), dict) or not isinstance(data.get("motors"), dict):
+                return
             with self.lock:
                 self.telemetry = data
                 self.history.append({"timestamp": time.time(), **data})
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             print("Received invalid JSON")
 
     def get_data(self):
@@ -77,36 +79,59 @@ if not current:
     time.sleep(1)
     st.rerun()
 
-col1, col2, col3, col4, col5, col6 = st.columns(6)
-col1.metric("Wi-Fi RSSI", f"{current.get('rssi', 0)} dBm")
-col2.metric("Control Error", f"{current.get('control_error', 0):.3f}")
-col3.metric("Left Motor", f"{current.get('motor_left', 0)} %")
-col4.metric("Right Motor", f"{current.get('motor_right', 0)} %")
-col5.metric("Loop time", f"{current.get('loop_time_us', 0)} us")
-col6.metric("Control period", f"{current.get('control_period_us', 0)} us")
+if history and time.time() - history[-1]["timestamp"] > 3:
+    st.warning("No recent readings received. Values below are the last received sample.")
 
-st.subheader("Line Sensors")
-sensor1, sensor2, sensor3 = st.columns(3)
-sensor1.metric("Left", current.get("sensor_left", 0))
-sensor2.metric("Center", current.get("sensor_center", 0))
-sensor3.metric("Right", current.get("sensor_right", 0))
+ir = current["ir"]
+imu = current.get("imu")
+motors = current["motors"]
+
+st.subheader("IR array")
+raw = ir.get("raw", [])
+on_line = ir.get("on_line", [])
+for i, col in enumerate(st.columns(len(raw) or 1)):
+    if i < len(raw):
+        col.metric(f"IR {i} · ADC", raw[i])
+        col.caption("Line" if i < len(on_line) and on_line[i] else "Background")
+st.metric("Line position", ir.get("position") if ir.get("position") is not None else "Unavailable")
+st.caption("Position: 0 = left, 5000 = right. No position is shown when the line is lost.")
+
+st.subheader("MPU-6050")
+if not imu:
+    st.warning("MPU readings unavailable: check sensor, calibration and data-ready connection.")
+else:
+    for col, axis in zip(st.columns(3), "xyz"):
+        col.metric(f"Acceleration {axis.upper()} (g)", f"{imu[f'accel_{axis}_g']:.3f}")
+    for col, axis in zip(st.columns(3), "xyz"):
+        col.metric(f"Gyro {axis.upper()} (°/s)", f"{imu[f'gyro_{axis}_dps']:.3f}")
+    st.metric("Gyro Z before firmware filter (°/s)", f"{imu['gyro_z_raw_dps']:.3f}")
+
+st.subheader("Motor outputs")
+left, right = st.columns(2)
+left.metric("Left applied command", f"{motors['left_applied'] * 100:.1f}%")
+right.metric("Right applied command", f"{motors['right_applied'] * 100:.1f}%")
+st.caption(f"Driver: {'armed' if motors['armed'] else 'disarmed'}. Signed commands after trim/saturation; not measured wheel speed or PWM duty.")
 
 if history:
-    df = pd.DataFrame(history)
+    rows = []
+    for item in history:
+        row = {"timestamp": item["timestamp"]}
+        row.update({f"IR {i}": value for i, value in enumerate(item["ir"]["raw"])})
+        row.update(item.get("imu") or {})
+        row.update({"Left command (%)": item["motors"]["left_applied"] * 100,
+                    "Right command (%)": item["motors"]["right_applied"] * 100})
+        rows.append(row)
+    df = pd.DataFrame(rows)
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
     df = df.set_index("timestamp")
-
-    st.subheader("Control Error")
-    st.line_chart(df["control_error"])
-
-    st.subheader("Motor Commands")
-    st.line_chart(df[["motor_left", "motor_right"]])
-
-    st.subheader("Line Sensors")
-    st.line_chart(df[["sensor_left", "sensor_center", "sensor_right"]])
-
-uptime_seconds = current.get("uptime_ms", 0) / 1000
-st.caption(f"ESP32 uptime: {uptime_seconds:.1f} s")
+    st.subheader("IR readings (ADC)")
+    st.line_chart(df.filter(regex=r"^IR "))
+    st.subheader("Acceleration (g)")
+    st.line_chart(df.reindex(columns=[f"accel_{axis}_g" for axis in "xyz"]))
+    st.subheader("Gyroscope (°/s)")
+    st.line_chart(df.reindex(columns=[f"gyro_{axis}_dps" for axis in "xyz"] + ["gyro_z_raw_dps"]))
+    st.subheader("Applied motor commands (%)")
+    st.line_chart(df[["Left command (%)", "Right command (%)"]])
 
 time.sleep(1)
 st.rerun()

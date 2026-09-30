@@ -1,29 +1,29 @@
 /**
  * @file robot_telemetry.h
- *
- * @brief Amostra e interface do serviço de telemetria MQTT.
- *
- * As chamadas pertencem à mesma tarefa de rede; a conexão MQTT pode bloquear.
- * O contador de publicações indica envios locais, não confirmação de entrega.
+ * @brief Amostra dos sensores e saídas dos motores para publicação MQTT.
  */
-
 #pragma once
+#include <stdint.h>
+#include "config/board_pins.h"
 
-// Application snapshot. Motor values are percentages, not GPIO commands.
 struct RobotTelemetrySample {
-    int sensorLeft = 0;
-    int sensorCenter = 0;
-    int sensorRight = 0;
-    float controlError = 0;
-    int motorLeft = 0;
-    int motorRight = 0;
-    unsigned long loopTimeUs = 0;
-    unsigned long controlPeriodUs = 0;
+    uint16_t irRaw[pins::IR_CHANNEL_COUNT] = {};
+    bool irOnLine[pins::IR_CHANNEL_COUNT] = {};
+    bool lineDetected = false;
+    uint16_t linePosition = 0;
+    bool imuValid = false;
+    float accelX = 0, accelY = 0, accelZ = 0;
+    float gyroX = 0, gyroY = 0, gyroZ = 0, gyroZRaw = 0;
+    // Comandos aplicados normalizados, não velocidade medida nem ciclo de trabalho do PWM.
+    float motorLeft = 0, motorRight = 0;
+    bool motorsArmed = false;
 };
 
-// Initialize Serial first. Call all functions from a single network task.
-// MQTT connect may block: never call from a control task or ISR.
+// Inicializa uma única vez, antes das tarefas de aquisição e rede, com a serial pronta.
 void robotTelemetrySetup();
+// Chamar apenas na tarefa de rede: a conexão MQTT pode bloquear.
 void robotTelemetryLoop();
+// Fila da última amostra, segura entre tarefas; a aquisição nunca espera pela rede.
 void robotTelemetrySetSample(const RobotTelemetrySample& sample);
+// Consultar apenas na tarefa de rede.
 unsigned long robotTelemetryPublishedCount();

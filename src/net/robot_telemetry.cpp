@@ -14,6 +14,8 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 
 #include "net/robot_telemetry.h"
 #include "net/wifi_connection.h"
@@ -21,7 +23,7 @@
 #include "network_config.h"
 
 namespace {
-// Network configuration
+// Configuração de rede
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
@@ -31,8 +33,8 @@ unsigned long lastMqttAttemptMs = 0;
 unsigned long publishedCount = 0;
 bool previousMqttConnected = false;
 bool bufferReady = false;
-bool sampleValid = false;
-RobotTelemetrySample telemetry;
+QueueHandle_t samples = nullptr;
+constexpr size_t PAYLOAD_SIZE = 1024;
 
 void updateMqttConnection() {
     if (WiFi.status() != WL_CONNECTED) {
@@ -81,22 +83,35 @@ void publishTelemetry() {
     const bool mqttConnected = wifiConnected && mqttClient.connected();
     if (!mqttConnected || !bufferReady) return;
 
+    RobotTelemetrySample telemetry;
+    // Consome apenas a amostra mais recente, sem republicar dados já consumidos.
+    if (!samples || xQueueReceive(samples, &telemetry, 0) != pdTRUE) return;
     JsonDocument doc;
-    doc["uptime_ms"] = millis();
-    doc["rssi"] = WiFi.RSSI();
-    doc["wifi_connected"] = wifiConnected;
-    doc["mqtt_connected"] = mqttConnected;
-    doc["sample_valid"] = sampleValid;
-    doc["sensor_left"] = telemetry.sensorLeft;
-    doc["sensor_center"] = telemetry.sensorCenter;
-    doc["sensor_right"] = telemetry.sensorRight;
-    doc["control_error"] = telemetry.controlError;
-    doc["motor_left"] = telemetry.motorLeft;
-    doc["motor_right"] = telemetry.motorRight;
-    doc["loop_time_us"] = telemetry.loopTimeUs;
-    doc["control_period_us"] = telemetry.controlPeriodUs;
+    JsonArray raw = doc["ir"]["raw"].to<JsonArray>();
+    JsonArray onLine = doc["ir"]["on_line"].to<JsonArray>();
+    for (uint8_t i = 0; i < pins::IR_CHANNEL_COUNT; ++i) {
+        raw.add(telemetry.irRaw[i]);
+        onLine.add(telemetry.irOnLine[i]);
+    }
+    doc["ir"]["line_detected"] = telemetry.lineDetected;
+    if (telemetry.lineDetected) doc["ir"]["position"] = telemetry.linePosition;
+    else doc["ir"]["position"] = nullptr;
+    if (telemetry.imuValid) {
+        doc["imu"]["accel_x_g"] = telemetry.accelX;
+        doc["imu"]["accel_y_g"] = telemetry.accelY;
+        doc["imu"]["accel_z_g"] = telemetry.accelZ;
+        doc["imu"]["gyro_x_dps"] = telemetry.gyroX;
+        doc["imu"]["gyro_y_dps"] = telemetry.gyroY;
+        doc["imu"]["gyro_z_dps"] = telemetry.gyroZ;
+        doc["imu"]["gyro_z_raw_dps"] = telemetry.gyroZRaw;
+    } else {
+        doc["imu"] = nullptr;
+    }
+    doc["motors"]["left_applied"] = telemetry.motorLeft;
+    doc["motors"]["right_applied"] = telemetry.motorRight;
+    doc["motors"]["armed"] = telemetry.motorsArmed;
 
-    char payload[416];
+    char payload[PAYLOAD_SIZE];
     if (doc.overflowed() || measureJson(doc) >= sizeof(payload)) {
         Serial.println("[MQTT] Telemetry JSON exceeds payload buffer");
         return;
@@ -111,17 +126,17 @@ void publishTelemetry() {
     }
 }
 
-} // namespace
+} // namespace anônimo
 
 void robotTelemetrySetup() {
-    telemetry = RobotTelemetrySample{};
+    samples = xQueueCreate(1, sizeof(RobotTelemetrySample));
+    if (!samples) Serial.println("[Telemetry] Snapshot mailbox allocation failed");
     publishedCount = 0;
-    sampleValid = false;
     previousMqttConnected = false;
     mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
     mqttClient.setSocketTimeout(1);
-    // Include MQTT fixed header, topic length, topic and the full JSON payload.
-    bufferReady = mqttClient.setBufferSize(5 + 2 + sizeof(MQTT_TOPIC_TELEMETRY) + 416);
+    // Reserva espaço para o cabeçalho MQTT, o tamanho do tópico, o tópico e o JSON completo.
+    bufferReady = mqttClient.setBufferSize(5 + 2 + sizeof(MQTT_TOPIC_TELEMETRY) + PAYLOAD_SIZE);
     if (!bufferReady) Serial.println("[MQTT] Buffer allocation failed");
     wifiConnectionSetup();
     lastMqttAttemptMs = millis() - MQTT_RETRY_INTERVAL_MS;
@@ -129,8 +144,7 @@ void robotTelemetrySetup() {
 }
 
 void robotTelemetrySetSample(const RobotTelemetrySample& sample) {
-    telemetry = sample;
-    sampleValid = true;
+    if (samples) xQueueOverwrite(samples, &sample);
 }
 
 unsigned long robotTelemetryPublishedCount() {
@@ -140,7 +154,7 @@ unsigned long robotTelemetryPublishedCount() {
 void robotTelemetryLoop() {
     wifiConnectionLoop();
     if (!wifiConnectionConnected()) {
-        // Drop the stale transport without trying to send an MQTT packet.
+        // Encerra a conexão inválida sem tentar enviar um pacote MQTT.
         wifiClient.stop();
     } else if (bufferReady) {
         updateMqttConnection();

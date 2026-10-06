@@ -176,8 +176,38 @@ constexpr float MOTOR_DEADZONE = 0.65f;
  * As duas flags existem, e não só a do lado invertido, para que o mapa fique
  * explícito: se a fiação for refeita, é um booleano de cada lado.
  */
-constexpr bool MOTOR_L_REVERSED = true;
-constexpr bool MOTOR_R_REVERSED = false;
+constexpr bool MOTOR_L_REVERSED = false;
+constexpr bool MOTOR_R_REVERSED = true;
+
+/**
+ * @brief Os dois canais do driver atendem os lados trocados do robô.
+ *
+ * A frente do robô é a ponta onde os sensores estão. A rotulagem original de
+ * "esquerda" e "direita" foi feita com a outra ponta como frente — e inverter a
+ * frente troca esquerda com direita. Então o canal `MOTOR_L_*` aciona a roda
+ * fisicamente à **direita**, e vice-versa.
+ *
+ * Por que isso precisa de uma terceira flag, além das duas de inversão: os
+ * motores são montados espelhados, então exatamente **um** dos lados precisa ter
+ * o sentido invertido para que o robô ande em linha reta. Só há duas combinações
+ * que produzem translação, `(true, false)` e `(false, true)`, e elas dão sentidos
+ * de marcha opostos. Trocar de uma para a outra nega as duas velocidades de roda
+ * ao mesmo tempo, o que nega a diferença entre elas — e a diferença é a curva.
+ *
+ * Em outras palavras: **as duas flags de inversão não conseguem acertar o sentido
+ * de marcha e o sentido de curva ao mesmo tempo.** Uma terceira correção é
+ * matematicamente necessária, e o lugar dela é aqui.
+ *
+ * Aplicada no MotorDriver, no ponto em que velocidade lógica vira canal de
+ * hardware. Assim a camada de controle mantém a convenção da seção 5.2 — ação
+ * positiva vira à direita — e `appliedLeft()`, `appliedRight()` e MOTOR_TRIM
+ * continuam se referindo aos lados físicos corretos.
+ *
+ * @note Conferir com test_motors, de pé atrás do robô olhando para os sensores:
+ *       no passo "Esquerdo, frente", a roda que gira deve ser a que está à sua
+ *       esquerda. Se for a da direita, esta flag está certa.
+ */
+constexpr bool MOTOR_SIDES_SWAPPED = true;
 
 /**
  * @brief Fator de compensação do descasamento entre os lados, de -1 a 1.
@@ -191,21 +221,24 @@ constexpr bool MOTOR_R_REVERSED = false;
 constexpr float MOTOR_TRIM = 0.0f;
 
 /**
- * @brief Frequência do PWM, decidida na bancada.
+ * @brief Frequência do PWM.
  *
- * Meio-termo entre o ~1 kHz (mais torque em baixa rotação, motor audível) e o
- * ~20 kHz (silencioso, perde torque): a 5 kHz o chiado sai da faixa mais
- * incômoda sem sacrificar torque na partida, que é o que importa com uma zona
- * morta tão alta.
+ * 1 kHz, escolhido na pista: privilegia torque em baixa rotação, ao custo de o
+ * motor ficar audível. Com a zona morta em 0,65 — ou seja, com pouca tensão
+ * chegando de fato aos motores — torque na partida vale mais que silêncio.
+ *
+ * @note Era 5 kHz na etapa 2 e foi reduzido depois. Se a alimentação for revista
+ *       e a zona morta cair, vale reavaliar: a 5 kHz ou mais o chiado sai da
+ *       faixa mais incômoda.
  */
 constexpr uint32_t MOTOR_PWM_FREQ_HZ = 1000;
 
 /**
  * @brief Resolução do PWM, em bits.
  *
- * A 5 kHz o LEDC do ESP32 (clock de 80 MHz) comporta até 13 bits. 10 bits dão
- * 1024 passos, dos quais ~358 caem na faixa útil acima da zona morta — folga
- * suficiente para a malha a 250 Hz.
+ * A 1 kHz o LEDC do ESP32 (clock de 80 MHz) comporta até 16 bits, então 10 bits
+ * estão bem dentro do limite. São 1024 passos, dos quais ~358 caem na faixa útil
+ * acima da zona morta — folga suficiente para a malha a 250 Hz.
  */
 constexpr uint8_t MOTOR_PWM_RESOLUTION_BITS = 10;
 

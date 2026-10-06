@@ -163,8 +163,17 @@ void MotorDriver::setSpeed(float left, float right)
    applied_left_  = clampf(left, -cfg::MAX_SPEED, cfg::MAX_SPEED);
    applied_right_ = clampf(right, -cfg::MAX_SPEED, cfg::MAX_SPEED);
 
-   applySide(LEDC_CH_LEFT, pins::MOTOR_L_IN1, pins::MOTOR_L_IN2, applied_left_,
+   /* Mapeia velocidade lógica para canal de hardware. É o último passo de
+      propósito: tudo acima dele — saturação, trim, telemetria — trabalha em
+      lados lógicos, que são os lados físicos do robô. Só aqui o fato de os
+      canais do driver atenderem os lados trocados entra na conta. */
+   const float cmd_channel_l =
+       cfg::MOTOR_SIDES_SWAPPED ? applied_right_ : applied_left_;
+   const float cmd_channel_r =
+       cfg::MOTOR_SIDES_SWAPPED ? applied_left_ : applied_right_;
+
+   applySide(LEDC_CH_LEFT, pins::MOTOR_L_IN1, pins::MOTOR_L_IN2, cmd_channel_l,
              cfg::MOTOR_L_REVERSED);
-   applySide(LEDC_CH_RIGHT, pins::MOTOR_R_IN3, pins::MOTOR_R_IN4, applied_right_,
+   applySide(LEDC_CH_RIGHT, pins::MOTOR_R_IN3, pins::MOTOR_R_IN4, cmd_channel_r,
              cfg::MOTOR_R_REVERSED);
 }

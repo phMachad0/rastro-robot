@@ -11,8 +11,15 @@
  * a toda velocidade, 0 é parado, +1 é frente a toda velocidade. "Frente" é a
  * frente do robô nos dois lados — o espelhamento mecânico do chassi é
  * compensado por cfg::MOTOR_L_REVERSED e cfg::MOTOR_R_REVERSED. A conversão
- * para duty de PWM, a compensação da zona morta e o trim entre os lados ficam
- * aqui dentro. A camada de controle não sabe que zona morta existe.
+ * para duty de PWM, a compensação da zona morta, o trim entre os lados e o
+ * mapeamento para os canais do driver ficam aqui dentro. A camada de controle não
+ * sabe que zona morta existe, nem em qual canal do L298N cada lado está ligado.
+ *
+ * **Lado lógico × canal de hardware.** `setSpeed(left, right)` fala em lados
+ * **físicos** do robô: "esquerda" é a esquerda de quem está atrás dele olhando
+ * para a frente. Qual canal do driver atende cada lado é problema desta classe, e
+ * depende de cfg::MOTOR_SIDES_SWAPPED. A tradução acontece no último passo, para
+ * que saturação, trim e telemetria trabalhem todos em lados físicos.
  *
  * O driver **não filtra nem atrasa** o comando: o que a malha pede é o que sai,
  * a menos de saturação e trim. Moldar a dinâmica do robô é papel da camada de

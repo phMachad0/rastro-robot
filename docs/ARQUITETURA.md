@@ -77,6 +77,28 @@ ADC2 — só servem como digitais enquanto o Wi-Fi estiver ligado).
 > ⚠️ **Alimentação:** o QTR-8A vai em **3V3**, nunca em 5V — o ADC do ESP32 não
 > tolera mais que ~3.3 V na entrada.
 
+
+### Fatos de montagem, e por que são três flags
+
+O mapa de pinos descreve a **fiação**. Três fatos de **montagem** ficam em
+`robot_config.h`, porque não são fiação e esconder qualquer um deles no mapa de pinos
+faria uma conferência futura com o multímetro parecer errada:
+
+| Flag | Fato físico | Onde é aplicada |
+|---|---|---|
+| `MOTOR_L_REVERSED` / `MOTOR_R_REVERSED` | os motores dos dois lados são montados espelhados, então exatamente um lado precisa ter o sentido invertido | `MotorDriver::applySide()` |
+| `MOTOR_SIDES_SWAPPED` | os canais do driver atendem os lados trocados, porque a rotulagem original de esquerda/direita foi feita com a outra ponta do robô como frente | `MotorDriver::setSpeed()`, no último passo |
+| `IR_REVERSED` | o cabo do array está ligado na ordem inversa à física | `IrArray::sample()` |
+| `GYRO_Z_REVERSED` | o MPU-6050 está montado com o eixo Z invertido | `Imu::read()` |
+
+**Por que `MOTOR_SIDES_SWAPPED` é matematicamente necessária.** Com os motores
+espelhados, só duas das quatro combinações das flags de inversão produzem translação —
+`(true, false)` e `(false, true)` — e elas dão sentidos de marcha opostos. Passar de uma
+para a outra nega as duas velocidades de roda ao mesmo tempo, o que nega a diferença
+entre elas. E a diferença é a curva. Ou seja: **as duas flags de inversão não conseguem
+acertar o sentido de marcha e o sentido de curva ao mesmo tempo.** Uma terceira correção
+é obrigatória; a escolha é só onde colocá-la.
+
 ---
 
 ## 3. Camadas
@@ -366,6 +388,15 @@ com saturação simétrica que preserva a diferença: se um lado passa do limite
 dois** são deslocados na mesma medida, sacrificando velocidade para manter a curva que
 o controle pediu. Cortar cada lado independentemente reduziria a diferença, que é
 exatamente a informação de controle.
+
+> **Essa convenção é um invariante, não uma preferência.** Se o robô vira para o lado
+> errado, a correção **não** é negar a ação aqui: a `LineFollower` é o algoritmo, e um
+> sinal de menos no meio dele não diz nada sobre o hardware que o motivou. Funciona —
+> inclusive o amortecimento continua correto, porque negar a ação inteira nega o termo do
+> giroscópio junto e o sinal de `ação → guinada física` também vira —, mas quebra quatro
+> coisas: a convenção documentada, as asserções de `test/host/test_control.cpp`, o sinal
+> de `action` na telemetria usada para sintonia, e o significado de `appliedLeft()` e de
+> `MOTOR_TRIM`. O lugar da correção é `MOTOR_SIDES_SWAPPED`, na seção 2.
 
 **Convenção de sinal**, o ponto onde um seguidor de linha costuma fugir da linha em vez
 de voltar para ela:

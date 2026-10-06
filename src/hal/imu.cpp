@@ -136,7 +136,7 @@ bool Imu::waitForSample(uint32_t timeout_ms)
    return true;
 }
 
-void Imu::readSample()
+void Imu::read()
 {
    g_consumed_count = g_interrupt_count;
 
@@ -180,7 +180,7 @@ bool Imu::update()
       return false;
    }
 
-   readSample();
+   read();
    return true;
 }
 
@@ -199,7 +199,7 @@ bool Imu::calibrateGyroBias()
          return false;
       }
 
-      readSample();
+      read();
 
       /* Acumula o valor cru: bias_* ainda é zero, então yaw_rate_raw_ é a
          leitura direta do sensor. */

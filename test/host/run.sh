@@ -15,12 +15,22 @@ trap 'rm -rf "$OUT"' EXIT
 
 # bounds-strict e o que detecta estouro em array membro de classe; o ASan sozinho
 # nao pega esse caso, porque o acesso cai dentro do mesmo objeto.
-g++ -std=c++11 -Wall -Wextra -Werror \
-    -fsanitize=address,undefined -fsanitize=bounds-strict \
-    -g -O1 \
-    -I "$ROOT/include" \
+FLAGS=(-std=c++11 -Wall -Wextra -Werror
+       -fsanitize=address,undefined -fsanitize=bounds-strict
+       -g -O1 -I "$ROOT/include")
+
+echo "=== camada de controle ==="
+g++ "${FLAGS[@]}" \
     "$ROOT/test/host/test_control.cpp" \
     "$ROOT"/src/control/*.cpp \
     -o "$OUT/test_control"
-
 "$OUT/test_control"
+
+echo
+echo "=== maquina de estados ==="
+g++ "${FLAGS[@]}" \
+    "$ROOT/test/host/test_supervisor.cpp" \
+    "$ROOT/src/app/supervisor.cpp" \
+    "$ROOT/src/control/stop_policy.cpp" \
+    -o "$OUT/test_supervisor"
+"$OUT/test_supervisor"

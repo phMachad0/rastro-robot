@@ -53,9 +53,21 @@ class Imu {
    /**
     * @brief Lê uma amostra e atualiza o estado filtrado.
     *
+    * Espera a amostra por conta própria, consultando o contador da ISR. É a
+    * forma usada pelas rotinas de teste, que rodam num laço único.
+    *
     * @return false se não houve amostra nova dentro de cfg::IMU_TIMEOUT_MS.
     */
    bool update();
+
+   /**
+    * @brief Lê uma amostra imediatamente, sem esperar.
+    *
+    * Para quem já foi acordado pela notificação da ISR e portanto sabe que a
+    * amostra existe — é o caminho da `TaskImu`. Chamar sem amostra nova devolve
+    * a mesma leitura outra vez, o que não é erro, só desperdício de barramento.
+    */
+   void read();
 
    /**
     * @brief Bloqueia até a próxima amostra ficar pronta.
@@ -111,7 +123,6 @@ class Imu {
    uint32_t interruptCount() const;
 
  private:
-   void readSample();
 
    float yaw_rate_ = 0.0f;
    float yaw_rate_raw_ = 0.0f;

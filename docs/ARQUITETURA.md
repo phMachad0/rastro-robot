@@ -115,21 +115,20 @@ include/
     motor_driver.h      // 2 lados; setSpeed(left,right) em [-1..1]        [etapa 2]
     ir_array.h          // leitura bruta, limiar fixo, posição da linha    [etapa 2]
     imu.h               // wrapper do MPU6050 + ISR de data-ready          [etapa 2]
-    status_led.h
+    status_led.h        // padrão de pisca por estado                      [etapa 4]
   control/
     pid_algorithm.h     // PID sobre erro, com dt e anti-windup        [etapa 3]
     line_follower.h     // compõe PID + damper + classificador         [etapa 3]
     gyro_damper.h       // amortecimento por taxa angular (RF06)       [etapa 3]
     track_classifier.h  // reta × curva, ganhos interpolados           [etapa 3]
-    mark_detector.h     // RF02 — stub desativado
+    stop_policy.h       // RF03/RF04 — TimedPolicy ativa                [etapa 4]
+    mark_detector.h     // RF02 — stub desativado                       [etapa 4]
   app/
     entry_points.h      // despacho APP_TARGET_* → appSetup/appLoop     [etapa 1]
     robot_app.h         // ponto de entrada do firmware completo        [etapa 1]
-    serial_mutex.h      // exclusão mútua da serial entre tarefas       [etapa 1]
-    robot_state.h       // structs compartilhados entre tasks
-    supervisor.h        // máquina de estados
-    telemetry.h         // agregação e serialização
-    tasks.h             // criação e prioridades das tasks
+    robot_state.h       // structs das mailboxes + enums de modo        [etapa 4]
+    supervisor.h        // máquina de estados                           [etapa 4]
+    tasks.h             // tarefas, mailboxes, filas, event group, ISRs [etapa 4]
   net/
     wifi_manager.h
     ws_server.h
@@ -237,7 +236,7 @@ enfileirada.
 | Fila | `qCommands` (prof. 8) | `xQueueSend` | `TaskNet` / ISR do botão → `TaskSupervisor` |
 | Fila | `qTelemetry` (prof. 4) | `xQueueSend` | `TaskTelemetry` → `TaskNet` |
 | Event group | `egRobotMode` | bits `RUN`, `STOP`, `CALIB`, `FAULT` | `TaskSupervisor` → `TaskControl` (mudança de modo sem polling) |
-| Mutex | `mxI2C` | `xSemaphoreCreateMutex` | serializa o barramento I2C entre `TaskImu` e qualquer outro consumidor futuro |
+| ~~Mutex~~ | ~~`mxI2C`~~ | — | **Não implementado, e não por esquecimento.** `TaskImu` detém o barramento de ponta a ponta: inicialização, estimativa de bias e leitura periódica acontecem todas nela. Não existe segundo acesso para serializar. Se um dia houver outro periférico I2C, o mutex entra junto com ele |
 | Mutex | `mxParams` | `xSemaphoreCreateMutex` | protege os ganhos de PID enquanto o dashboard os reescreve em tempo de execução |
 | Notificação | direta à task | `vTaskNotifyGiveFromISR` | ISRs acordando `TaskImu` e `TaskLineSensor` |
 
@@ -484,6 +483,13 @@ Ambos os tempos e o alvo de voltas são parâmetros expostos no dashboard e
 persistidos em NVS. Trocar de política não toca em nenhum outro módulo — é essa a
 razão da interface existir mesmo com uma das duas desligada.
 
+**`lap_count` e `stop_count` são contadores distintos.** O primeiro é alimentado
+exclusivamente pelo `MarkDetector`, então fica sempre em zero com `FEATURE_LATERAL_MARKS`
+desligada, como a seção 6.2 exige. O segundo conta ciclos parar–retomar concluídos e é o
+que permite validar RF03 e RF04 sem a marcação lateral. Incrementar `lap_count` na
+retomada seria mais simples e estaria errado: faria a telemetria reportar voltas que o
+robô não deu.
+
 ### 6.2 RF02 — marcação lateral, desacoplada
 
 `FEATURE_LATERAL_MARKS` é `0` por padrão. Com a flag em zero:
@@ -708,12 +714,20 @@ permite compilá-la no PC e verificar o comportamento sem a placa:
 ./test/host/run.sh
 ```
 
-Roda em cerca de dois segundos, com `AddressSanitizer`, `UndefinedBehaviorSanitizer` e
-`-fsanitize=bounds-strict`. Cobre 33 verificações: sinais e antissimetria da ação,
-derivada sobre rampa e sobre erro constante, integral escalada por `dt`, teto do
-integrador, anti-windup travando sob saturação **e** liberando quando o erro inverte,
-congelamento da ação e do integrador com a linha perdida, histerese do classificador e
-taxa de interpolação dos ganhos.
+São duas suítes, ambas com `AddressSanitizer`, `UndefinedBehaviorSanitizer` e
+`-fsanitize=bounds-strict`, rodando juntas em poucos segundos:
+
+| Suíte | Cobre |
+|---|---|
+| `test_control.cpp` | sinais e antissimetria da ação, derivada sobre rampa e sobre erro constante, integral escalada por `dt`, teto do integrador, anti-windup travando sob saturação **e** liberando quando o erro inverte, congelamento da ação e do integrador com a linha perdida, histerese do classificador, taxa de interpolação dos ganhos |
+| `test_supervisor.cpp` | transições da FSM da seção 6, precedência da falha por linha perdida sobre a parada programada, isolamento de `FAULT` (só sai por reset), e **as durações medidas** de RF03 e RF04 |
+
+A verificação da FSM é possível porque `update()` recebe o relógio por parâmetro, em vez
+de chamar `millis()` internamente. Isso parece um detalhe de estilo, mas é o que permite
+medir RF03 e RF04 com tempo simulado e de forma determinística, em segundos, em vez de
+cronometrar o robô na pista. As suítes medem a **duração** de cada estado e a comparam
+com o prazo configurado, em vez de checar "antes do prazo ainda está parado" — uma
+checagem desse tipo passaria com qualquer prazo maior que a margem escolhida.
 
 O `bounds-strict` é o que detecta estouro em array membro de classe — o `AddressSanitizer`
 sozinho não pega esse caso, porque o acesso cai dentro do mesmo objeto. Foi exatamente o
@@ -724,9 +738,11 @@ matemática, a placa verifica a integração com os sensores reais e a orientaç
 dos sinais.
 
 **Regra de ouro:** nenhum `Serial.print` dentro de ISR, e nenhum em `TaskControl`.
-No firmware completo, todo log passa por `TaskTelemetry`. O `SerialMutex.h` que já
-existe no projeto serve para as rotinas de teste que tiverem mais de uma task
-imprimindo.
+No firmware completo, `TaskTelemetry` é a **única** tarefa que imprime.
+
+Isso também é o que tornou desnecessário o `SerialMutex.h` que existia no projeto, e
+que foi removido na etapa 4: ele declarava um `extern` sem definição — qualquer arquivo
+que o incluísse falharia na ligação. Com um único escritor, não há o que serializar.
 
 ---
 
@@ -867,10 +883,31 @@ Ordem pensada para que cada etapa seja testável sozinha antes da seguinte depen
     3. **Troca de regime.** Parado, `blend` deve ir a 0; girando, a 1, com `kp` e `kg`
        caminhando sem salto.
 
-**Etapa 4 — RTOS e aplicação**
-13. Criar as tasks, mailboxes, filas e event group da seção 4.
-14. `Supervisor` com a FSM da seção 6 e a `TimedPolicy`.
-15. Validar: robô segue linha (RF01), para e retoma por tempo (RF03/RF04).
+**Etapa 4 — RTOS e aplicação** ✅ implementada, validação na pista pendente
+13. ✅ Tasks, mailboxes, filas, event group e as três ISRs da seção 4.
+14. ✅ `Supervisor` com a FSM da seção 6, `TimedPolicy` e `StatusLed`.
+15. ⏳ Validar na pista: RF01, RF03 e RF04. A lógica de RF03/RF04 está verificada no
+    host com tempo simulado (durações medidas de 30000 ms e 3000 ms), mas seguir a linha
+    só se confirma com o robô andando.
+
+    **Decisões tomadas na implementação:**
+
+    - **Inicialização da IMU mora na `TaskImu`.** O `begin()` e a estimativa de bias
+      rodam dentro dela, antes do laço, e o supervisor só observa o resultado por um
+      enum. A alternativa óbvia — supervisor chamando `calibrateGyroBias()` — faria dois
+      núcleos conversarem com o mesmo barramento I2C ao mesmo tempo. É também o que
+      tornou o mutex `mxI2C` desnecessário.
+    - **Armamento tratado na borda.** `TaskControl` detecta a transição para `RUNNING` e
+      chama `follower.reset()` antes de armar. Sem isso, o integral acumulado antes da
+      parada seria aplicado de uma vez na retomada do RF04.
+    - **Debounce do botão com `xTaskGetTickCountFromISR()`**, não `millis()`: `millis()`
+      resolve para uma função que pode não estar em IRAM, e chamá-la de dentro de uma ISR
+      trava a placa se a flash estiver ocupada — o que passa a acontecer de fato quando a
+      etapa 6 gravar em NVS.
+    - **`StatusLed`** indica o estado por padrão de pisca. A validação de RF03 e RF04
+      acontece com o robô na pista, longe do cabo serial e antes de o dashboard existir;
+      sem indicador local não há como distinguir "parou porque a política decidiu" de
+      "parou porque entrou em falha".
 
 **Etapa 5 — Rede**
 16. `WiFiManager` com STA + fallback AP + mDNS.

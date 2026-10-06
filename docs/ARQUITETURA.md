@@ -174,6 +174,17 @@ introduzir jitter na malha de controle.
 > curtas e precisam entregar a amostra fresca antes do controle acordar. Se
 > `TaskControl` tivesse prioridade maior, leria dados de um ciclo atrasado.
 
+> ⚠️ **O contrapeso dessa escolha é um requisito, não uma otimização.** Como
+> `TaskLineSensor` está acima de `TaskControl` no mesmo núcleo, se a amostragem não
+> couber no próprio período ela nunca bloqueia — e o controle **simplesmente não roda**.
+> Não há erro, não há log: a malha desaparece em silêncio.
+>
+> Aconteceu de verdade. A primeira versão amostrava a 500 Hz com 4 leituras por canal:
+> 24 chamadas a `analogRead()`, a ~60–100 µs cada, dentro de um período de 2 ms. Hoje são
+> 250 Hz com 2 leituras, ou 12 conversões por período de 4 ms, e a telemetria publica
+> `lineSampleUs` e `lineLoadPct` para que a margem seja observável em vez de presumida.
+> **`lineLoadPct` acima de ~80% é sinal de alerta.**
+
 ### 4.1 Fluxo de dados
 
 ```mermaid
@@ -219,6 +230,13 @@ flowchart TD
 ```
 
 ### 4.2 Primitivas de sincronização
+
+> **Publicação incondicional.** `TaskControl` publica `ControlState` em **todo** ciclo,
+> inclusive quando falta amostra de sensor — nesse caso com `have_line` em zero e a malha
+> não atualizada. A primeira versão abandonava o ciclo quando a mailbox do array estava
+> vazia, e o efeito era que qualquer falha a montante chegava à telemetria como zeros,
+> indistinguível de "o controle calculou zero". Um estado publicado dizendo "não tenho
+> entrada" vale muito mais que estado nenhum.
 
 O padrão dominante é **mailbox**: uma fila de profundidade 1 escrita com
 `xQueueOverwrite` e lida com `xQueuePeek`. O produtor nunca bloqueia, o consumidor

@@ -73,6 +73,36 @@ volatile ImuInitStatus g_imu_status = ImuInitStatus::PENDING;
 volatile TickType_t g_last_button_tick = 0;
 #endif
 
+/**
+ * @brief Mede a taxa de repetição de um laço, em Hz, por janela de 1 s.
+ *
+ * Instrumentação permanente, e não temporária de depuração: a taxa efetiva de
+ * cada tarefa é a única forma de ver privação de CPU acontecendo. Uma tarefa
+ * privada não gera erro nem log — ela simplesmente não roda.
+ */
+class RateMeter {
+ public:
+   void tick(uint32_t now_ms)
+   {
+      count_++;
+
+      const uint32_t elapsed = now_ms - window_start_ms_;
+
+      if (elapsed >= 1000) {
+         hz_ = (count_ * 1000.0f) / elapsed;
+         count_ = 0;
+         window_start_ms_ = now_ms;
+      }
+   }
+
+   float hz() const { return hz_; }
+
+ private:
+   uint32_t count_ = 0;
+   uint32_t window_start_ms_ = 0;
+   float    hz_ = 0.0f;
+};
+
 /*****************************************
  * Interrupções — seção 4.3
  *
@@ -187,12 +217,18 @@ void taskLineSensor(void*)
 {
    g_ir.begin();
 
+   RateMeter rate;
+
    for (;;) {
       if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(50)) == 0) {
          continue;
       }
 
+      const uint32_t sample_start_us = micros();
       g_ir.sample();
+      const uint32_t sample_us = micros() - sample_start_us;
+
+      rate.tick(millis());
 
       LineState state;
       state.position = g_ir.position();
@@ -203,6 +239,13 @@ void taskLineSensor(void*)
       for (uint8_t i = 0; i < pins::IR_CHANNEL_COUNT; i++) {
          state.raw[i] = g_ir.raw(i);
       }
+
+      state.sample_hz = rate.hz();
+      state.sample_us = sample_us;
+
+      /* Carga medida, não estimada: é o que transforma o orçamento de tempo
+         desta tarefa em algo verificável na placa. */
+      state.load_pct = (sample_us * cfg::IR_SAMPLE_HZ) / 10000.0f;
 
       state.timestamp_ms = millis();
 
@@ -225,8 +268,12 @@ void taskControl(void*)
    TickType_t last_wake = xTaskGetTickCount();
    bool was_running = false;
 
+   RateMeter rate;
+
    for (;;) {
       vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(cfg::CONTROL_PERIOD_MS));
+
+      rate.tick(millis());
 
       const bool running = (xEventGroupGetBits(g_eg_mode) & EV_MODE_RUN) != 0;
 
@@ -248,22 +295,25 @@ void taskControl(void*)
       const bool have_line = readLineState(&line);
       const bool have_imu = readImuState(&imu);
 
+      /* Sem amostra do array não há malha a fechar: os motores ficam parados e a
+         malha não é atualizada. Mas o ciclo **não** é abandonado — a publicação
+         do estado acontece de qualquer forma, mais abaixo, para que a telemetria
+         mostre `haveLine` em zero em vez de simplesmente não mostrar nada.
+         Abandonar o ciclo aqui era o que tornava toda falha a montante
+         indistinguível de "o controle calculou zero". */
       if (!have_line) {
-         /* Sem amostra do array ainda não há malha a fechar. Mantém os motores
-            parados em vez de controlar sobre dado inexistente. */
          g_motors.stop();
-         continue;
-      }
-
-      const float yaw_rate = have_imu ? imu.yaw_rate : 0.0f;
-      const float dt = cfg::CONTROL_PERIOD_MS / 1000.0f;
-
-      g_follower.update(line.error, line.line_detected, yaw_rate, dt);
-
-      if (running) {
-         g_motors.setSpeed(g_follower.left(), g_follower.right());
       } else {
-         g_motors.stop();
+         const float yaw_rate = have_imu ? imu.yaw_rate : 0.0f;
+         const float dt = cfg::CONTROL_PERIOD_MS / 1000.0f;
+
+         g_follower.update(line.error, line.line_detected, yaw_rate, dt);
+
+         if (running) {
+            g_motors.setSpeed(g_follower.left(), g_follower.right());
+         } else {
+            g_motors.stop();
+         }
       }
 
       ControlState state;
@@ -285,6 +335,11 @@ void taskControl(void*)
       state.pid_saturated = g_follower.pid().saturated();
       state.mix_saturated = g_follower.mixSaturated();
       state.motors_armed = g_motors.isArmed();
+
+      state.have_line = have_line;
+      state.have_imu = have_imu;
+      state.loop_hz = rate.hz();
+
       state.timestamp_ms = millis();
 
       xQueueOverwrite(g_mb_control, &state);
@@ -415,6 +470,20 @@ void taskTelemetry(void*)
       teleplot::send("blend", control.blend);
       teleplot::send("lineLostMs", (int32_t)control.line_lost_ms);
       teleplot::send("armed", (int32_t)(control.motors_armed ? 1 : 0));
+
+      /*****************************************
+       * Diagnóstico da cadeia de tarefas
+       *
+       * Na ordem em que a cadeia pode quebrar. A primeira série que estiver em
+       * zero é onde o problema está — não é preciso adivinhar.
+       *****************************************/
+      teleplot::send("imuStatus", (int32_t)g_imu_status);
+      teleplot::send("lineHz", line.sample_hz, "Hz");
+      teleplot::send("lineSampleUs", (int32_t)line.sample_us, "us");
+      teleplot::send("lineLoadPct", line.load_pct, "%");
+      teleplot::send("ctrlHz", control.loop_hz, "Hz");
+      teleplot::send("haveLine", (int32_t)(control.have_line ? 1 : 0));
+      teleplot::send("haveImu", (int32_t)(control.have_imu ? 1 : 0));
 
       teleplot::send("heap", (int32_t)ESP.getFreeHeap());
    }

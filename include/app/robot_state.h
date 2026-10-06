@@ -63,6 +63,22 @@ struct LineState {
    uint8_t  detected_count;
    bool     line_detected;
    uint16_t raw[pins::IR_CHANNEL_COUNT];
+
+   /** @brief Taxa efetiva de amostragem medida, em Hz. */
+   float sample_hz;
+
+   /** @brief Duração da última amostragem, em µs. */
+   uint32_t sample_us;
+
+   /**
+    * @brief Fração do período de amostragem gasta amostrando, em porcentagem.
+    *
+    * É o número que diz se a tarefa cabe no próprio período. Acima de ~80% o
+    * controle começa a ser privado de CPU; em 100% ele para de rodar, porque
+    * `TaskLineSensor` tem prioridade maior e nunca chega a bloquear.
+    */
+   float load_pct;
+
    uint32_t timestamp_ms;
 };
 
@@ -99,6 +115,29 @@ struct ControlState {
 
    /** @brief true se os motores estavam armados neste ciclo. */
    bool motors_armed;
+
+   /*****************************************
+    * Diagnóstico
+    *
+    * Existe porque a primeira versão desta tarefa abandonava o ciclo quando
+    * faltava amostra do array, sem publicar nada. Toda falha a montante aparecia
+    * como zeros na telemetria, indistinguível de "o controle calculou zero".
+    *****************************************/
+
+   /** @brief false se a mailbox do array estava vazia neste ciclo. */
+   bool have_line;
+
+   /** @brief false se a mailbox da IMU estava vazia neste ciclo. */
+   bool have_imu;
+
+   /**
+    * @brief Taxa efetiva da malha, em Hz.
+    *
+    * Se cair muito abaixo de cfg::CONTROL_HZ, esta tarefa está sendo privada de
+    * CPU por alguma de prioridade maior no mesmo núcleo. Zero significa que ela
+    * não roda — e aí nada do resto desta struct chega à telemetria.
+    */
+   float loop_hz;
 
    uint32_t timestamp_ms;
 };

@@ -25,7 +25,20 @@ namespace cfg {
  *****************************************/
 
 constexpr uint32_t CONTROL_HZ   = 250;  /**< Malha de controle, TaskControl. */
-constexpr uint32_t IR_SAMPLE_HZ = 500;  /**< Amostragem do array IR, via timer. */
+/**
+ * @brief Amostragem do array IR, via timer.
+ *
+ * Igual a CONTROL_HZ, e não o dobro. Amostrar mais rápido do que a malha
+ * consome não melhora nada — a amostra extra é sobrescrita na mailbox antes de
+ * ser lida — e custa tempo de CPU num núcleo que também tem de rodar o controle.
+ *
+ * Isso **não** é só economia: `TaskLineSensor` tem prioridade acima de
+ * `TaskControl`, de propósito, para entregar a amostra fresca antes do controle
+ * acordar. A consequência é que se a amostragem não couber no seu período, ela
+ * nunca bloqueia e o controle simplesmente não roda. O orçamento de tempo desta
+ * tarefa é, portanto, um requisito de funcionamento e não de desempenho.
+ */
+constexpr uint32_t IR_SAMPLE_HZ = 250;
 constexpr uint32_t IMU_SAMPLE_HZ = 200; /**< Taxa do MPU-6050, via data-ready. */
 constexpr uint32_t SUPERVISOR_HZ = 50;  /**< Máquina de estados. */
 constexpr uint32_t TELEMETRY_HZ = 20;   /**< Envio de telemetria em regime normal. */
@@ -38,8 +51,21 @@ constexpr uint32_t TELEMETRY_PERIOD_MS  = 1000 / TELEMETRY_HZ;
  * Array IR e posição da linha
  *****************************************/
 
-/** @brief Leituras por canal em cada amostragem, para média e redução de ruído. */
-constexpr uint8_t IR_SAMPLES_PER_CHANNEL = 4;
+/**
+ * @brief Leituras por canal em cada amostragem, promediadas.
+ *
+ * Duas, e não quatro. `analogRead()` no ESP32 custa ~60 a 100 µs, então quatro
+ * leituras em seis canais davam 24 conversões, ou 1,4 a 2,4 ms — num período de
+ * amostragem que era de 2 ms. A tarefa não cabia no próprio período.
+ *
+ * A média também rende pouco aqui: a classificação é por limiar fixo, então só
+ * importa se a leitura está acima ou abaixo de IR_BLACK_THRESHOLD. Promediar só
+ * muda o resultado para leituras praticamente em cima do limiar.
+ *
+ * Se `detectedCount` ficar piscando com o robô parado, a correção certa é
+ * histerese no limiar, não aumentar este número.
+ */
+constexpr uint8_t IR_SAMPLES_PER_CHANNEL = 2;
 
 /**
  * @brief Limiar que separa fundo escuro de linha clara, na leitura bruta do ADC.

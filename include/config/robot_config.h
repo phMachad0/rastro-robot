@@ -345,6 +345,20 @@ constexpr uint32_t IMU_TIMEOUT_MS = 100;
  * flag ligada, MarkCountPolicy usa LAPS_TARGET.
  *****************************************/
 
+/**
+ * @brief Atraso da partida automática, contado a partir da entrada em IDLE.
+ *
+ * Contado de IDLE, e não do boot, porque antes de IDLE o robô está estimando o
+ * bias do giroscópio — cfg::GYRO_BIAS_SAMPLES amostras a cfg::IMU_SAMPLE_HZ, ou
+ * seja ~2,5 s em que ele precisa ficar imóvel. Um atraso de 3 s contado da
+ * energização sobraria meio segundo depois disso, o que não dá tempo de apoiar o
+ * robô e afastar a mão.
+ *
+ * Do ligar ao arrancar são, portanto, ~5,5 s. O LED pisca lento durante a
+ * contagem e fica aceso ao arrancar.
+ */
+constexpr uint32_t AUTOSTART_DELAY_MS = 3000;
+
 constexpr uint32_t RUN_DURATION_MS  = 30000;  /**< Tempo em RUNNING antes de parar. */
 constexpr uint32_t STOP_DURATION_MS = 3000;   /**< Tempo parado antes de retomar. */
 constexpr uint8_t  LAPS_TARGET      = 3;      /**< Marcações até a parada. */

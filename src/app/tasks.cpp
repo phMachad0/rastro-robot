@@ -62,6 +62,7 @@ hw_timer_t* g_ir_timer = nullptr;
  */
 volatile ImuInitStatus g_imu_status = ImuInitStatus::PENDING;
 
+#if !FEATURE_AUTOSTART
 /**
  * @brief Instante do último acionamento aceito do botão, em ticks.
  *
@@ -70,6 +71,7 @@ volatile ImuInitStatus g_imu_status = ImuInitStatus::PENDING;
  * está em IRAM — proibido em contexto de interrupção.
  */
 volatile TickType_t g_last_button_tick = 0;
+#endif
 
 /*****************************************
  * Interrupções — seção 4.3
@@ -90,6 +92,7 @@ void IRAM_ATTR irTimerIsr()
    portYIELD_FROM_ISR(woken);
 }
 
+#if !FEATURE_AUTOSTART
 /**
  * @brief Botão de start/stop, borda de descida com debounce por timestamp.
  *
@@ -116,6 +119,7 @@ void IRAM_ATTR buttonIsr()
    xQueueSendFromISR(g_q_commands, &command, &woken);
    portYIELD_FROM_ISR(woken);
 }
+#endif  // !FEATURE_AUTOSTART
 
 /*****************************************
  * Tarefas
@@ -504,8 +508,10 @@ bool tasksStart()
     * um handle nulo travaria a placa no primeiro disparo.
     *****************************************/
 
+#if !FEATURE_AUTOSTART
    pinMode(pins::BTN_START, INPUT_PULLUP);
    attachInterrupt(digitalPinToInterrupt(pins::BTN_START), buttonIsr, FALLING);
+#endif
 
    /* Divisor 80 sobre o clock de 80 MHz dá 1 MHz, ou seja, 1 µs por contagem. */
    g_ir_timer = timerBegin(0, 80, true);

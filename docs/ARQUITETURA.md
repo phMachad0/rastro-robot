@@ -262,6 +262,8 @@ Três fontes, todas com ISR mínima (`IRAM_ATTR`, sem alocação, sem `Serial`, 
    que o teste atual usa.
 
 3. **`BTN_START` (GPIO 13) — borda de descida com debounce por timestamp na ISR.**
+   *Atualmente não compilada:* `FEATURE_AUTOSTART` está ligada e o robô parte sozinho.
+   O código segue no lugar, atrás da flag.
    `xQueueSendFromISR(qCommands, CMD_TOGGLE_RUN)`. Serve para armar/desarmar o robô
    sem depender do Wi-Fi.
 
@@ -461,6 +463,7 @@ stateDiagram-v2
     end note
 
     IDLE --> RUNNING: CMD_START (botão ou dashboard)
+    IDLE --> RUNNING: partida automática após AUTOSTART_DELAY_MS
     RUNNING --> STOPPED: gatilho de parada (RF03)
     STOPPED --> RUNNING: política de retomada satisfeita (RF04)
 
@@ -469,6 +472,19 @@ stateDiagram-v2
     RUNNING --> IDLE: CMD_STOP
     FAULT --> IDLE: CMD_RESET
 ```
+
+> ⚠️ **`FEATURE_AUTOSTART` está ligada.** O robô sai de `IDLE` para `RUNNING` sozinho,
+> `AUTOSTART_DELAY_MS` após ficar pronto, e a ISR do botão não é compilada. Do energizar
+> ao arrancar são ~5,5 s: ~2,5 s de estimativa de bias do giroscópio mais os 3 s de
+> contagem. O atraso é contado da entrada em `IDLE`, e não do boot, porque contado do
+> boot sobraria meio segundo depois da estimativa — sem tempo de apoiar o robô e afastar
+> a mão.
+>
+> A partida automática vale para `IDLE`, **não** para `FAULT`: um robô que saiu da pista
+> não volta a andar sozinho, só depois de um `CMD_RESET`. Mas um reset o devolve a
+> `IDLE`, e de lá ele arranca de novo em 3 s.
+>
+> Desligar a flag devolve o comportamento manual, com botão. É o único lugar a mexer.
 
 `TaskControl` observa `egRobotMode` e só aciona os motores em `RUNNING`. Em qualquer
 outro estado a saída é forçada a zero — a parada é feita na camada que aciona os
@@ -915,6 +931,10 @@ Ordem pensada para que cada etapa seja testável sozinha antes da seguinte depen
       resolve para uma função que pode não estar em IRAM, e chamá-la de dentro de uma ISR
       trava a placa se a flash estiver ocupada — o que passa a acontecer de fato quando a
       etapa 6 gravar em NVS.
+    - **`FEATURE_AUTOSTART`**, ligada por ora: o robô arranca sozinho 3 s depois de
+      ficar pronto e a lógica do botão sai do binário. Um interruptor único em vez de
+      duas flags, porque os dois modos são mutuamente exclusivos na prática — ou o robô
+      espera comando, ou não espera.
     - **`StatusLed`** indica o estado por padrão de pisca. A validação de RF03 e RF04
       acontece com o robô na pista, longe do cabo serial e antes de o dashboard existir;
       sem indicador local não há como distinguir "parou porque a política decidiu" de

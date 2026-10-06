@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstdint>
 #include "app/supervisor.h"
+#include "config/features.h"
 #include "config/robot_config.h"
 
 static int failures = 0;
@@ -293,7 +294,51 @@ int main()
       check(sup.state().stop_count == 1, "apenas o primeiro ciclo fechou ate aqui");
    }
 
-   // ---- 14. TimedPolicy isolada ----
+#if FEATURE_AUTOSTART
+   // ---- 14. Partida automatica: IDLE arranca sozinho ----
+   {
+      Supervisor sup; Clock clk;
+      sup.begin(); bootToIdle(sup, clk);
+      check(sup.mode() == RobotMode::IDLE, "preparado: em IDLE");
+
+      const uint32_t idle_ms = timeInState(sup, clk, cfg::AUTOSTART_DELAY_MS * 3);
+      check(sup.mode() == RobotMode::RUNNING, "IDLE arranca sozinho, sem comando");
+      check(withinOnePeriod(idle_ms, cfg::AUTOSTART_DELAY_MS - cfg::SUPERVISOR_PERIOD_MS),
+            "espera AUTOSTART_DELAY_MS antes de arrancar");
+      printf("       esperou %u ms (AUTOSTART_DELAY_MS = %u)\n",
+             idle_ms + cfg::SUPERVISOR_PERIOD_MS, cfg::AUTOSTART_DELAY_MS);
+   }
+
+   // ---- 14b. Nao arranca antes do prazo ----
+   {
+      Supervisor sup; Clock clk;
+      sup.begin(); bootToIdle(sup, clk);
+      run(sup, clk, cfg::AUTOSTART_DELAY_MS / 2);
+      check(sup.mode() == RobotMode::IDLE, "metade do prazo: ainda em IDLE");
+      check(!sup.motorsAllowed(), "nao autoriza motores antes do prazo");
+   }
+
+   // ---- 14c. FAULT nao arranca sozinho; so depois do reset ----
+   //
+   // Importante: a partida automatica vale para IDLE, nao para FAULT. Um robo que
+   // saiu da pista nao pode voltar a andar sozinho.
+   {
+      Supervisor sup; Clock clk;
+      sup.begin();
+      sup.update(Command::NONE, ImuInitStatus::FAILED, 0, clk.ms); clk.tick();
+      check(sup.mode() == RobotMode::FAULT, "preparado: em FAULT");
+
+      run(sup, clk, cfg::AUTOSTART_DELAY_MS * 3);
+      check(sup.mode() == RobotMode::FAULT, "FAULT nao arranca sozinho");
+
+      sup.update(Command::RESET, ImuInitStatus::READY, 0, clk.ms); clk.tick();
+      check(sup.mode() == RobotMode::IDLE, "reset leva a IDLE");
+      run(sup, clk, cfg::AUTOSTART_DELAY_MS + cfg::SUPERVISOR_PERIOD_MS);
+      check(sup.mode() == RobotMode::RUNNING, "depois do reset, arranca sozinho de novo");
+   }
+#endif
+
+   // ---- 15. TimedPolicy isolada ----
    {
       StopPolicy& p = activeStopPolicy();
       RobotState s = {};

@@ -43,7 +43,18 @@ void robotAppSetup()
    Serial.printf("amortecimento por giroscopio: %s | ganhos adaptativos: %s\n",
                  FEATURE_GYRO_DAMPING ? "ligado" : "desligado",
                  FEATURE_ADAPTIVE_GAINS ? "ligados" : "desligados");
+#if FEATURE_AUTOSTART
+   Serial.println();
+   Serial.println("*** PARTIDA AUTOMATICA LIGADA ***");
+   Serial.printf("O robo arranca sozinho %lu ms apos ficar pronto, sem comando.\n",
+                 (unsigned long)cfg::AUTOSTART_DELAY_MS);
+   Serial.printf("Do ligar ao arrancar: ~%lu ms, contando a estimativa de bias.\n",
+                 (unsigned long)(cfg::AUTOSTART_DELAY_MS +
+                                 (1000UL * cfg::GYRO_BIAS_SAMPLES) / cfg::IMU_SAMPLE_HZ));
+   Serial.println("Nao ha comando que impeca: para parar, corte a alimentacao.");
+#else
    Serial.printf("botao de start/stop: GPIO%u\n", pins::BTN_START);
+#endif
 
    g_started = tasksStart();
 
@@ -52,7 +63,11 @@ void robotAppSetup()
       return;
    }
 
+#if FEATURE_AUTOSTART
+   Serial.println("Tarefas em execucao. NAO MOVER o robo durante a estimativa de bias.");
+#else
    Serial.println("Tarefas em execucao. Pressione o botao para armar.");
+#endif
 }
 
 void robotAppLoop()

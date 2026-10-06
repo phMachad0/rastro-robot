@@ -53,6 +53,28 @@
 #endif
 
 /**
+ * @brief Partida automática, sem comando nenhum.
+ *
+ * Com a flag em 1:
+ *   - o supervisor sai de IDLE para RUNNING sozinho, depois de
+ *     cfg::AUTOSTART_DELAY_MS;
+ *   - a ISR do botão e o próprio pino não são compilados.
+ *
+ * Com a flag em 0 volta o comportamento manual: nada se move até um
+ * Command::START ou um toque no botão de cfg / pins::BTN_START.
+ *
+ * É um interruptor único em vez de duas flags separadas porque os dois modos são
+ * mutuamente exclusivos na prática — ou o robô espera comando, ou não espera.
+ *
+ * @warning Com a partida automática ligada, o robô **sai andando sozinho** alguns
+ *          segundos depois de energizar, inclusive na bancada. Não há comando que
+ *          impeça isso: o único jeito de parar é desligar a alimentação.
+ */
+#ifndef FEATURE_AUTOSTART
+#define FEATURE_AUTOSTART 1
+#endif
+
+/**
  * @brief Telemetria e dashboard por Wi-Fi — RF05.
  *
  * Desligar libera memória e elimina qualquer atividade de rádio, o que ajuda

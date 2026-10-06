@@ -6,6 +6,7 @@
 
 #include "app/supervisor.h"
 
+#include "config/features.h"
 #include "config/robot_config.h"
 
 void Supervisor::begin()
@@ -117,7 +118,18 @@ void Supervisor::update(Command command, ImuInitStatus imu_status, uint32_t line
          if (command == Command::START || command == Command::TOGGLE_RUN) {
             policy_->reset();
             enter(RobotMode::RUNNING, now_ms);
+            break;
          }
+
+#if FEATURE_AUTOSTART
+         /* Vale em toda entrada em IDLE, inclusive depois de um reset de falha:
+            o robô volta a andar sozinho 3 s após sair de FAULT. É o que se quer
+            enquanto não há comando nenhum disponível. */
+         if (state_.mode_elapsed_ms >= cfg::AUTOSTART_DELAY_MS) {
+            policy_->reset();
+            enter(RobotMode::RUNNING, now_ms);
+         }
+#endif
          break;
 
       case RobotMode::RUNNING:

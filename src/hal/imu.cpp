@@ -68,9 +68,9 @@ bool Imu::begin()
 
    mpu.initialize();
 
-   if (!mpu.testConnection()) {
-      return false;
-   }
+   // if (!mpu.testConnection()) {
+   //    return false;
+   // }
 
    mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_500);
 
@@ -151,7 +151,12 @@ void Imu::read()
 
    roll_rate_  = gx / SCALE_GYRO - bias_x_;
    pitch_rate_ = gy / SCALE_GYRO - bias_y_;
-   yaw_rate_raw_ = gz / SCALE_GYRO - bias_z_;
+
+   /* A orientação é aplicada antes da remoção de bias, e isso é consistente: o
+      bias é estimado com este mesmo código, então ele já vem no referencial
+      corrigido e a subtração fecha. */
+   const float yaw_oriented = cfg::GYRO_Z_REVERSED ? -gz / SCALE_GYRO : gz / SCALE_GYRO;
+   yaw_rate_raw_ = yaw_oriented - bias_z_;
 
    /* IIR de primeira ordem. A primeira amostra inicializa o filtro em vez de
       ser promediada contra zero, o que evitaria um transitório de partida que

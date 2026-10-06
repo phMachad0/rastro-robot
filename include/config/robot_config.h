@@ -58,6 +58,25 @@ constexpr uint8_t IR_SAMPLES_PER_CHANNEL = 4;
 constexpr uint16_t IR_BLACK_THRESHOLD = 4000;
 
 /**
+ * @brief Inversão da orientação do array em relação à frente do robô.
+ *
+ * `pins::IR_CHANNELS` lista os canais na ordem em que o cabo está ligado. Se
+ * essa ordem corre da direita para a esquerda vista de cima, a posição calculada
+ * cresce para o lado errado e o erro sai com o sinal trocado — o que faria o
+ * controle corrigir para longe da linha em vez de para ela.
+ *
+ * Medido na bancada com test_control: era o caso. É a mesma categoria de fato que
+ * cfg::MOTOR_L_REVERSED — montagem física, não fiação —, e por isso fica aqui e
+ * não reordenando o mapa de pinos, que precisa continuar dizendo qual GPIO está
+ * ligado em qual canal do módulo.
+ *
+ * Afeta apenas IrArray::position() e IrArray::error(). Os getters `raw()` e
+ * `onLine()` continuam indexados pela ordem de ligação, para que diagnosticar um
+ * canal morto continue sendo direto contra pins::IR_CHANNELS.
+ */
+constexpr bool IR_REVERSED = true;
+
+/**
  * @brief Distância de posição entre dois canais vizinhos.
  *
  * Define a escala de IrArray::position(): com N canais a posição vai de 0
@@ -193,17 +212,24 @@ constexpr float LINE_ERROR_SCALE = (float)LINE_POSITION_CENTER;
 constexpr float GYRO_RATE_REFERENCE = 300.0f;
 
 /**
- * @brief Inversão do sinal da taxa de guinada.
+ * @brief Inversão do sinal da taxa de guinada do MPU-6050.
  *
- * Depende de como o MPU-6050 está orientado no chassi. Com o sinal errado o
- * termo de amortecimento deixa de ser realimentação negativa e passa a ser
- * **positiva**: em vez de frear a rotação, ela é reforçada, e o robô entra em
- * oscilação crescente até sair da pista.
+ * Depende de como o sensor está orientado no chassi. Medido na bancada com
+ * test_control: girando o robô no sentido horário visto de cima, o eixo Z do
+ * sensor saía negativo.
  *
- * @warning Conferir no test_control antes de ligar os motores: girando o robô à
- *          mão no sentido horário, `yawRate` precisa sair positivo.
+ * Aplicada na própria classe `Imu`, e não em quem consome o valor. Isso importa:
+ * quando a inversão ficava no `GyroDamper`, `Imu::yawRate()` continuava
+ * devolvendo o sinal cru, então a telemetria mostrava um valor e o controle usava
+ * outro — ligar a flag corrigia o amortecimento sem mudar nada no gráfico, o que
+ * torna a conferência impossível. Com a inversão na fonte existe **uma** definição
+ * de sinal: `yawRate()` positivo é sempre guinada no sentido horário.
+ *
+ * @warning Com o sinal errado o termo de amortecimento deixa de ser realimentação
+ *          negativa e passa a ser positiva: em vez de frear a rotação, ela é
+ *          reforçada, e o robô entra em oscilação crescente até sair da pista.
  */
-constexpr bool GYRO_Z_REVERSED = false;
+constexpr bool GYRO_Z_REVERSED = true;
 
 /*****************************************
  * Ganhos do controlador — regime de reta

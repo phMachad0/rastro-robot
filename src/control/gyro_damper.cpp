@@ -10,9 +10,10 @@
 
 float GyroDamper::term(float yaw_rate_dps)
 {
-   const float oriented = cfg::GYRO_Z_REVERSED ? -yaw_rate_dps : yaw_rate_dps;
-
-   normalized_rate_ = oriented / cfg::GYRO_RATE_REFERENCE;
+   /* A orientação do sensor no chassi já foi resolvida na classe Imu, então aqui
+      a taxa chega no referencial do robô: positiva é guinada no sentido horário.
+      Há um único lugar que define esse sinal. */
+   normalized_rate_ = yaw_rate_dps / cfg::GYRO_RATE_REFERENCE;
 
    /* Sinal negativo: é o que torna o termo realimentação negativa da rotação. */
    last_term_ = -kg_ * normalized_rate_;

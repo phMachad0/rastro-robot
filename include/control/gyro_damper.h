@@ -17,9 +17,9 @@
  * Se o robô está girando, o termo subtrai da ação e freia a rotação. É
  * amortecimento de velocidade real, não derivada numérica de sinal quantizado.
  *
- * @warning O sinal de ωz depende da orientação do MPU no chassi. Invertido, a
- *          realimentação deixa de ser negativa e passa a **reforçar** a rotação,
- *          levando a oscilação crescente. Ver cfg::GYRO_Z_REVERSED.
+ * @note A orientação do sensor no chassi é resolvida na classe `Imu`, por
+ *       cfg::GYRO_Z_REVERSED. Aqui a taxa já chega no referencial do robô, com
+ *       positivo significando guinada no sentido horário.
  *
  * Ver docs/ARQUITETURA.md, seção 5.3.
  */
@@ -39,8 +39,7 @@ class GyroDamper {
     * @param yaw_rate_dps Taxa de guinada em °/s, já sem bias e filtrada.
     *
     * @return Termo a **somar** à ação de controle. Já vem com o sinal negativo
-    *         e com a inversão de cfg::GYRO_Z_REVERSED aplicada, para que quem
-    *         chama não tenha que lembrar de nenhuma das duas.
+    *         aplicado, para que quem chama não precise lembrar dele.
     */
    float term(float yaw_rate_dps);
 

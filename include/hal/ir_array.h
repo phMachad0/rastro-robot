@@ -10,6 +10,14 @@
  * cfg::IR_BLACK_THRESHOLD é fundo, abaixo é linha. A faixa de operação do array
  * é conhecida e estável, então não há o que aprender em tempo de execução.
  *
+ * **Dois sistemas de índice**, e a diferença importa:
+ *
+ *   - `raw()` e `onLine()` usam a **ordem de ligação**, a mesma de
+ *     `pins::IR_CHANNELS`, para que conferir um canal morto seja direto;
+ *   - `position()` e `error()` usam a **ordem física** vista de cima, obtida
+ *     aplicando cfg::IR_REVERSED. É o que garante que a posição cresça quando a
+ *     linha se move para a direita do robô.
+ *
  * Fluxo de uso:
  *
  *     ir.begin();

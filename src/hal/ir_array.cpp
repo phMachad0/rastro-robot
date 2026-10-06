@@ -42,7 +42,15 @@ void IrArray::sample()
 
       if (on_line_[i]) {
          detected_count_++;
-         position_sum += (uint32_t)i * cfg::IR_POSITION_UNIT;
+
+         /* A orientação entra aqui, na conversão de índice de ligação para
+            posição física. Os getters raw() e onLine() continuam na ordem de
+            ligação, para que conferir um canal contra pins::IR_CHANNELS seja
+            direto. */
+         const uint8_t slot =
+             cfg::IR_REVERSED ? (uint8_t)(pins::IR_CHANNEL_COUNT - 1 - i) : i;
+
+         position_sum += (uint32_t)slot * cfg::IR_POSITION_UNIT;
       }
    }
 

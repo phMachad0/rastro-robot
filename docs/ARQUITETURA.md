@@ -279,10 +279,15 @@ sinal é invertido em relação ao caso mais comum. A cadeia é:
 2. **Classificação por limiar fixo:** leitura acima de `IR_BLACK_THRESHOLD` (4000) é
    fundo escuro, abaixo é linha branca. Não há calibração: a faixa de operação do
    array é conhecida e estável, então não há o que aprender em tempo de execução.
-3. **Posição:** média dos índices dos canais que veem linha,
+3. **Orientação:** `IR_REVERSED` converte índice de ligação em posição física. Medido na
+   bancada: o cabo do array está ligado na ordem inversa à física, e a flag está ligada.
+   Sem ela a posição cresceria para o lado errado e o controle corrigiria para longe da
+   linha. `raw()` e `onLine()` continuam na ordem de ligação, de propósito, para que
+   conferir um canal morto contra `IR_CHANNELS` continue direto.
+4. **Posição:** média dos índices físicos dos canais que veem linha,
    `pos = Σ(i · 1000) / n`, dando `0` (extrema esquerda) a `5000` (extrema direita)
    para 6 sensores. O setpoint é o centro, `2500`.
-4. **Linha perdida:** se nenhum canal vê linha, `lineDetected` fica falso e a última
+5. **Linha perdida:** se nenhum canal vê linha, `lineDetected` fica falso e a última
    posição válida é mantida — `TaskControl` então faz busca (seção 5.5).
 
 **Consequência do limiar fixo:** a posição é quantizada. Com um ou dois canais sobre
@@ -386,6 +391,16 @@ Pré-processamento obrigatório do `ωz`:
   ordem no firmware se ainda houver ruído.
 - **Fundo de escala:** `MPU6050_GYRO_FS_500` (±500 °/s). O ±250 do teste atual satura
   em curva fechada num robô rápido.
+- **Orientação:** `GYRO_Z_REVERSED`, aplicada **na classe `Imu`** e não em quem consome o
+  valor. Medido na bancada: o sensor está montado com o eixo Z invertido em relação ao
+  robô, e a flag está ligada.
+
+  A primeira versão aplicava a inversão dentro do `GyroDamper`. Era um erro de projeto:
+  `Imu::yawRate()` continuava devolvendo o sinal cru, então a telemetria mostrava um
+  valor e o controle usava outro. Ligar a flag corrigia o amortecimento **sem mudar nada
+  no gráfico**, o que torna a conferência na bancada impossível — exatamente a conferência
+  que a flag existe para permitir. Com a inversão na fonte há uma única definição:
+  `yawRate()` positivo é sempre guinada no sentido horário.
 
 ### 5.4 Classificador reta × curva e ganhos adaptativos
 
@@ -873,15 +888,11 @@ Ordem pensada para que cada etapa seja testável sozinha antes da seguinte depen
     dimensional antes disso — `KP_STRAIGHT = 0.60` aplicado a um erro de ±2500 daria
     ação de ±1500 numa saída que vai de -1 a 1.
 
-    Pendente de bancada, em ordem de risco:
-
-    1. **Sinal de `GYRO_Z_REVERSED`.** Girando o robô à mão no sentido horário,
-       `yawRate` precisa sair positivo. Invertido, o amortecimento do RF06 deixa de ser
-       realimentação negativa e passa a reforçar a rotação — oscilação crescente.
-    2. **Sinal da ação.** Robô à esquerda da linha deve produzir `error` e `action`
-       positivos, com `left > right`.
-    3. **Troca de regime.** Parado, `blend` deve ir a 0; girando, a 1, com `kp` e `kg`
-       caminhando sem salto.
+    **Sinais conferidos na bancada:** os dois estavam invertidos, e os dois foram
+    corrigidos por flag de configuração — `GYRO_Z_REVERSED` e `IR_REVERSED`, ambas
+    ligadas. A conferência também expôs um erro de projeto: `GYRO_Z_REVERSED` era
+    aplicada no `GyroDamper`, então a série `yawRate` da telemetria não mudava ao ligar a
+    flag. Movida para a classe `Imu`.
 
 **Etapa 4 — RTOS e aplicação** ✅ implementada, validação na pista pendente
 13. ✅ Tasks, mailboxes, filas, event group e as três ISRs da seção 4.
@@ -935,6 +946,10 @@ Ordem pensada para que cada etapa seja testável sozinha antes da seguinte depen
   rotação, audível) e o ~20 kHz (silencioso, perde torque). Tira o chiado da faixa mais
   incômoda sem sacrificar torque na partida.
 - ~~**Zona morta dos motores.**~~ Medida em **0,65** e compensada no `MotorDriver`.
+- ~~**Orientação do array IR.**~~ O cabo está ligado na ordem inversa à física.
+  Corrigido por `IR_REVERSED`, aplicada na conversão de índice para posição.
+- ~~**Orientação do giroscópio.**~~ O MPU-6050 está montado com o eixo Z invertido em
+  relação ao robô. Corrigido por `GYRO_Z_REVERSED`, aplicada na classe `Imu`.
 - ~~**Descasamento entre os lados.**~~ Não há descasamento significativo; `MOTOR_TRIM`
   fica em zero. O mecanismo permanece no `MotorDriver` porque o descasamento tende a
   aparecer com o desgaste e com a queda de tensão da bateria, e aí é ajustável pelo

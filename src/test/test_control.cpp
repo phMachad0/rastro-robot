@@ -17,14 +17,16 @@
  *
  * 1. **Sinal do giroscópio.** Girando o robô à mão no sentido horário visto de
  *    cima, `yawRate` precisa sair **positivo**. Se sair negativo, inverter
- *    cfg::GYRO_Z_REVERSED. Com o sinal errado o amortecimento do RF06 deixa de
- *    ser realimentação negativa e passa a reforçar a rotação, levando a
- *    oscilação crescente — é a falha mais perigosa da etapa.
+ *    cfg::GYRO_Z_REVERSED — a inversão é aplicada na classe `Imu`, então a série
+ *    plotada muda junto e a conferência é direta. Com o sinal errado o
+ *    amortecimento do RF06 deixa de ser realimentação negativa e passa a reforçar
+ *    a rotação, levando a oscilação crescente — é a falha mais perigosa da etapa.
  *
  * 2. **Sinal da ação.** Deslocando o robô para a **esquerda** da linha (linha
  *    aparece à direita do array), `error` e `action` precisam sair **positivos**,
  *    e `left` precisa ficar maior que `right` — o robô viraria à direita, de
- *    volta para a linha. Sinais invertidos aqui fariam o robô fugir da linha.
+ *    volta para a linha. Se saírem invertidos, a orientação do array está trocada:
+ *    inverter cfg::IR_REVERSED. Sinais errados aqui fariam o robô fugir da linha.
  *
  * 3. **Troca de regime.** Com o robô parado, `blend` deve ir a 0 (reta) depois
  *    de alguns décimos de segundo. Girando continuamente, deve ir a 1 (curva),
@@ -87,7 +89,9 @@ void testControlSetup()
    Serial.printf("Amortecimento por giroscopio: %s | ganhos adaptativos: %s\n",
                  FEATURE_GYRO_DAMPING ? "ligado" : "desligado",
                  FEATURE_ADAPTIVE_GAINS ? "ligados" : "desligados");
-   Serial.printf("Inversao de gyroZ: %s\n", cfg::GYRO_Z_REVERSED ? "sim" : "nao");
+   Serial.printf("Inversoes: gyroZ=%s array IR=%s\n",
+                 cfg::GYRO_Z_REVERSED ? "sim" : "nao",
+                 cfg::IR_REVERSED ? "sim" : "nao");
 
    follower.reset();
 

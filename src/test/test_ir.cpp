@@ -13,7 +13,10 @@
  *     não em cima de um deles. Se algum canal encostar nos 4000 estando sobre o
  *     fundo, ou passar deles estando sobre a linha, o valor precisa mudar.
  *   - `position`: deve varrer de 0 a 5000 conforme a linha passa da esquerda
- *     para a direita, cruzando 2500 no centro.
+ *     para a direita, cruzando 2500 no centro. Com cfg::IR_REVERSED ligada, a
+ *     ordem em que `raw0..raw5` acendem é a **inversa** do movimento da linha —
+ *     isso é esperado, porque essas séries seguem a ordem de ligação e a posição
+ *     segue a ordem física. O que precisa estar certo é o sentido de `position`.
  *   - `detectedCount`: quantos canais veem linha. Passando por cima da linha
  *     deve ficar em 1 ou 2. Piscando com o robô parado indica leitura oscilando
  *     em torno do limiar. Indo a 6, o array está sobre uma faixa transversal ou
@@ -57,6 +60,7 @@ void testIrSetup()
    Serial.printf("Teste do array IR: %u canais em ADC1\n", pins::IR_CHANNEL_COUNT);
    Serial.printf("Limiar fixo: leitura > %u e fundo escuro, <= %u e linha branca\n",
                  cfg::IR_BLACK_THRESHOLD, cfg::IR_BLACK_THRESHOLD);
+   Serial.printf("Orientacao do array invertida: %s\n", cfg::IR_REVERSED ? "sim" : "nao");
    Serial.println("Series: raw0..raw5, threshold, position, error, detectedCount");
 }
 

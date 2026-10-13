@@ -9,7 +9,9 @@
 
 #include "config/features.h"
 
-#if FEATURE_TELEMETRY || defined(APP_TARGET_TEST_TELEMETRY)
+#if (FEATURE_TELEMETRY && \
+     FEATURE_TELEMETRY_BACKEND == TELEMETRY_BACKEND_WIFI_MQTT) || \
+    defined(APP_TARGET_TEST_TELEMETRY)
 #include <Arduino.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
@@ -87,6 +89,16 @@ void publishTelemetry() {
     // Consome apenas a amostra mais recente, sem republicar dados já consumidos.
     if (!samples || xQueueReceive(samples, &telemetry, 0) != pdTRUE) return;
     JsonDocument doc;
+    doc["source"] = telemetry.synthetic ? "synthetic" : "live";
+    doc["robot"]["mode"] = telemetry.robotMode;
+    doc["robot"]["fault"] = telemetry.robotFault;
+    doc["health"]["line_available"] = telemetry.lineAvailable;
+    doc["health"]["imu_available"] = telemetry.imuAvailable;
+    doc["health"]["imu_status"] = telemetry.imuStatus;
+    doc["health"]["control_available"] = telemetry.controlAvailable;
+    doc["rates"]["control_hz"] = telemetry.controlHz;
+    doc["rates"]["ir_sample_hz"] = telemetry.lineSampleHz;
+    doc["rates"]["imu_sample_hz"] = telemetry.imuSampleHz;
     JsonArray raw = doc["ir"]["raw"].to<JsonArray>();
     JsonArray onLine = doc["ir"]["on_line"].to<JsonArray>();
     for (uint8_t i = 0; i < pins::IR_CHANNEL_COUNT; ++i) {
@@ -100,8 +112,6 @@ void publishTelemetry() {
         doc["imu"]["accel_x_g"] = telemetry.accelX;
         doc["imu"]["accel_y_g"] = telemetry.accelY;
         doc["imu"]["accel_z_g"] = telemetry.accelZ;
-        doc["imu"]["gyro_x_dps"] = telemetry.gyroX;
-        doc["imu"]["gyro_y_dps"] = telemetry.gyroY;
         doc["imu"]["gyro_z_dps"] = telemetry.gyroZ;
         doc["imu"]["gyro_z_raw_dps"] = telemetry.gyroZRaw;
     } else {

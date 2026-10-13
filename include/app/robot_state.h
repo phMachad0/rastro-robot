@@ -63,6 +63,7 @@ struct LineState {
    uint8_t  detected_count;
    bool     line_detected;
    uint16_t raw[pins::IR_CHANNEL_COUNT];
+   bool     on_line[pins::IR_CHANNEL_COUNT];
 
    /** @brief Taxa efetiva de amostragem medida, em Hz. */
    float sample_hz;

@@ -81,10 +81,36 @@ if not current:
 
 if history and time.time() - history[-1]["timestamp"] > 3:
     st.warning("No recent readings received. Values below are the last received sample.")
+if current.get("source") == "synthetic":
+    st.info("Synthetic demo values — no sensor or motor readings are coming from hardware.")
 
 ir = current["ir"]
 imu = current.get("imu")
 motors = current["motors"]
+robot = current.get("robot", {})
+health = current.get("health", {})
+rates = current.get("rates", {})
+
+st.subheader("Robot health")
+health_cols = st.columns(4)
+health_cols[0].metric("Mode", robot.get("mode", "Unknown"))
+fault = robot.get("fault", "Unknown")
+health_cols[1].metric("Fault", "None" if fault == "-" else fault)
+health_cols[2].metric("Line input", "Available" if health.get("line_available") else "Missing / stale")
+imu_status = health.get("imu_status", "UNKNOWN")
+if not health.get("imu_available") and imu_status == "READY":
+    imu_status = "STALE"
+health_cols[3].metric("IMU", imu_status)
+
+st.caption(f"Line detected: {'yes' if ir.get('line_detected') else 'no'}")
+rate_cols = st.columns(3)
+for col, label, key, available in (
+    (rate_cols[0], "Control rate", "control_hz", health.get("control_available")),
+    (rate_cols[1], "IR sample rate", "ir_sample_hz", health.get("line_available")),
+    (rate_cols[2], "IMU sample rate", "imu_sample_hz", health.get("imu_available")),
+):
+    value = rates.get(key, 0)
+    col.metric(label, f"{value:.1f} Hz" if available else "Unavailable")
 
 st.subheader("IR array")
 raw = ir.get("raw", [])
@@ -102,15 +128,17 @@ if not imu:
 else:
     for col, axis in zip(st.columns(3), "xyz"):
         col.metric(f"Acceleration {axis.upper()} (g)", f"{imu[f'accel_{axis}_g']:.3f}")
-    for col, axis in zip(st.columns(3), "xyz"):
-        col.metric(f"Gyro {axis.upper()} (°/s)", f"{imu[f'gyro_{axis}_dps']:.3f}")
+    st.metric("Yaw rate (°/s)", f"{imu['gyro_z_dps']:.3f}")
     st.metric("Gyro Z before firmware filter (°/s)", f"{imu['gyro_z_raw_dps']:.3f}")
 
 st.subheader("Motor outputs")
 left, right = st.columns(2)
 left.metric("Left applied command", f"{motors['left_applied'] * 100:.1f}%")
 right.metric("Right applied command", f"{motors['right_applied'] * 100:.1f}%")
-st.caption(f"Driver: {'armed' if motors['armed'] else 'disarmed'}. Signed commands after trim/saturation; not measured wheel speed or PWM duty.")
+if current.get("source") == "synthetic":
+    st.caption(f"Demo motor state: {'simulated armed' if motors['armed'] else 'simulated disarmed'}. No motor driver is connected.")
+else:
+    st.caption(f"Driver: {'armed' if motors['armed'] else 'disarmed'}. Signed commands after trim/saturation; not measured wheel speed or PWM duty.")
 
 if history:
     rows = []
@@ -129,7 +157,7 @@ if history:
     st.subheader("Acceleration (g)")
     st.line_chart(df.reindex(columns=[f"accel_{axis}_g" for axis in "xyz"]))
     st.subheader("Gyroscope (°/s)")
-    st.line_chart(df.reindex(columns=[f"gyro_{axis}_dps" for axis in "xyz"] + ["gyro_z_raw_dps"]))
+    st.line_chart(df.reindex(columns=["gyro_z_dps", "gyro_z_raw_dps"]))
     st.subheader("Applied motor commands (%)")
     st.line_chart(df[["Left command (%)", "Right command (%)"]])
 

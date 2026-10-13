@@ -9,7 +9,9 @@
 
 #include "config/features.h"
 
-#if FEATURE_TELEMETRY || defined(APP_TARGET_TEST_WIFI) || defined(APP_TARGET_TEST_TELEMETRY)
+#if (FEATURE_TELEMETRY && \
+     FEATURE_TELEMETRY_BACKEND == TELEMETRY_BACKEND_WIFI_MQTT) || \
+    defined(APP_TARGET_TEST_WIFI) || defined(APP_TARGET_TEST_TELEMETRY)
 #include "net/wifi_connection.h"
 #include <Arduino.h>
 #include <WiFi.h>

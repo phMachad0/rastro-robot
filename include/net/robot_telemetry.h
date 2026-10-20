@@ -25,6 +25,8 @@ struct RobotTelemetrySample {
     float gyroZ = 0, gyroZRaw = 0;
     // Comandos aplicados normalizados, não velocidade medida nem ciclo de trabalho do PWM.
     float motorLeft = 0, motorRight = 0;
+    // Sinais de controle normalizados antes da mistura nos motores.
+    float baseSpeed = 0, steeringAction = 0;
     bool motorsArmed = false;
 };
 

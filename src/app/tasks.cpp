@@ -532,6 +532,8 @@ void taskTelemetry(void*)
       }
       sample.motorLeft = control.left;
       sample.motorRight = control.right;
+      sample.baseSpeed = controlFresh ? control.base_speed : 0.0f;
+      sample.steeringAction = controlFresh ? control.action : 0.0f;
       sample.motorsArmed = control.motors_armed;
       robotTelemetrySetSample(sample);
       robotTelemetryLoop();

@@ -120,6 +120,8 @@ void publishTelemetry() {
     doc["motors"]["left_applied"] = telemetry.motorLeft;
     doc["motors"]["right_applied"] = telemetry.motorRight;
     doc["motors"]["armed"] = telemetry.motorsArmed;
+    doc["control"]["base_speed"] = telemetry.baseSpeed;
+    doc["control"]["steering_action"] = telemetry.steeringAction;
 
     char payload[PAYLOAD_SIZE];
     if (doc.overflowed() || measureJson(doc) >= sizeof(payload)) {

@@ -6,6 +6,7 @@ from collections import deque
 import pandas as pd
 import streamlit as st
 import paho.mqtt.client as mqtt
+import altair as alt
 
 from config import BROKER, PORT, TOPIC
 
@@ -115,10 +116,35 @@ for col, label, key, available in (
 st.subheader("IR array")
 raw = ir.get("raw", [])
 on_line = ir.get("on_line", [])
-for i, col in enumerate(st.columns(len(raw) or 1)):
-    if i < len(raw):
-        col.metric(f"IR {i} · ADC", raw[i])
-        col.caption("Line" if i < len(on_line) and on_line[i] else "Background")
+if raw:
+    adc_view = st.radio(
+        "IR chart scale",
+        ["Zoomed · 2500–4095", "Full · 0–4095"],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    adc_min = 2500 if adc_view.startswith("Zoomed") else 0
+    ir_frame = pd.DataFrame({
+        "Sensor": [f"IR {i}" for i in range(len(raw))],
+        "ADC": raw,
+        "Displayed ADC": [max(value, adc_min) for value in raw],
+        "Baseline": [adc_min] * len(raw),
+        "Line detected": [bool(on_line[i]) if i < len(on_line) else False for i in range(len(raw))],
+    })
+    ir_chart = alt.Chart(ir_frame).mark_bar().encode(
+        x=alt.X("Displayed ADC:Q", title=f"ADC reading · {adc_min}–4095", scale=alt.Scale(domain=[adc_min, 4095])),
+        x2=alt.X2("Baseline:Q"),
+        y=alt.Y("Sensor:N", title=None, sort=[f"IR {i}" for i in range(len(raw))]),
+        color=alt.Color(
+            "Line detected:N",
+            title="Surface",
+            scale=alt.Scale(domain=[True, False], range=["#f97316", "#38bdf8"]),
+        ),
+        tooltip=["Sensor", "ADC", alt.Tooltip("Line detected:N", title="Line")],
+    ).properties(height=220)
+    st.altair_chart(ir_chart, use_container_width=True)
+    if adc_min:
+        st.caption("Zoomed scale: readings below 2500 are shown at the left edge; hover a bar for its actual value.")
 st.metric("Line position", ir.get("position") if ir.get("position") is not None else "Unavailable")
 st.caption("Position: 0 = left, 5000 = right. No position is shown when the line is lost.")
 
@@ -132,9 +158,27 @@ else:
     st.metric("Gyro Z before firmware filter (°/s)", f"{imu['gyro_z_raw_dps']:.3f}")
 
 st.subheader("Motor outputs")
+control = current.get("control", {})
+command_frame = pd.DataFrame({
+    "Side": ["Left", "Right"],
+    "Command (%)": [motors["left_applied"] * 100, motors["right_applied"] * 100],
+})
+command_chart = alt.Chart(command_frame).mark_bar().encode(
+    x=alt.X(field="Command (%)", type="quantitative", title="Applied command (%)", scale=alt.Scale(domain=[-100, 100]), axis=alt.Axis(tickCount=5)),
+    y=alt.Y("Side:N", title=None, sort=["Left", "Right"]),
+    color=alt.Color("Side:N", scale=alt.Scale(domain=["Left", "Right"], range=["#38bdf8", "#a78bfa"]), legend=None),
+    tooltip=["Side", alt.Tooltip(field="Command (%)", type="quantitative", format=".1f")],
+).properties(height=100)
+zero_rule = alt.Chart(pd.DataFrame({"zero": [0]})).mark_rule(color="#94a3b8").encode(
+    x=alt.X(field="zero", type="quantitative")
+)
+st.altair_chart(command_chart + zero_rule, use_container_width=True)
 left, right = st.columns(2)
 left.metric("Left applied command", f"{motors['left_applied'] * 100:.1f}%")
 right.metric("Right applied command", f"{motors['right_applied'] * 100:.1f}%")
+base_speed_col, steering_col = st.columns(2)
+base_speed_col.metric("Requested base speed", f"{control.get('base_speed', 0) * 100:.1f}%")
+steering_col.metric("Steering correction", f"{control.get('steering_action', 0) * 100:+.1f}%")
 if current.get("source") == "synthetic":
     st.caption(f"Demo motor state: {'simulated armed' if motors['armed'] else 'simulated disarmed'}. No motor driver is connected.")
 else:
@@ -145,21 +189,61 @@ if history:
     for item in history:
         row = {"timestamp": item["timestamp"]}
         row.update({f"IR {i}": value for i, value in enumerate(item["ir"]["raw"])})
+        row["Line position"] = item["ir"].get("position")
         row.update(item.get("imu") or {})
         row.update({"Left command (%)": item["motors"]["left_applied"] * 100,
                     "Right command (%)": item["motors"]["right_applied"] * 100})
+        control_sample = item.get("control") or {}
+        row.update({"Base speed (%)": control_sample.get("base_speed", 0) * 100,
+                    "Steering correction (%)": control_sample.get("steering_action", 0) * 100})
         rows.append(row)
     df = pd.DataFrame(rows)
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
     df = df.set_index("timestamp")
-    st.subheader("IR readings (ADC)")
-    st.line_chart(df.filter(regex=r"^IR "))
+
+    st.subheader("Line position over time")
+    position_history = df.reset_index()
+    position_chart = alt.Chart(position_history).mark_line(
+        invalid="break-paths-show-path-domains"
+    ).encode(
+        x=alt.X("timestamp:T", title=None),
+        y=alt.Y(
+            field="Line position",
+            type="quantitative",
+            title="Sensor-relative position",
+            scale=alt.Scale(domain=[0, 5000]),
+        ),
+        tooltip=[
+            "timestamp:T",
+            alt.Tooltip(field="Line position", type="quantitative", format=".0f"),
+        ],
+    ).properties(height=180)
+    st.altair_chart(position_chart, use_container_width=True)
+    st.caption("Position is relative to the sensor array (0 = left, 5000 = right). Gaps indicate that the line was not detected; this is not a world-space trajectory.")
+
+    with st.expander("IR sensor history", expanded=False):
+        ir_columns = [f"IR {i}" for i in range(len(raw))]
+        ir_history = df[ir_columns].reset_index().melt(
+            id_vars="timestamp", var_name="Sensor", value_name="ADC"
+        )
+        ir_history_chart = alt.Chart(ir_history).mark_line().encode(
+            x=alt.X("timestamp:T", title=None),
+            y=alt.Y("ADC:Q", title="ADC", scale=alt.Scale(domain=[0, 4095])),
+            tooltip=["timestamp:T", "Sensor:N", "ADC:Q"],
+        ).properties(height=90).facet(
+            facet=alt.Facet("Sensor:N", sort=ir_columns),
+            columns=2,
+        ).resolve_scale(y="shared")
+        st.altair_chart(ir_history_chart, use_container_width=True)
+
     st.subheader("Acceleration (g)")
     st.line_chart(df.reindex(columns=[f"accel_{axis}_g" for axis in "xyz"]))
     st.subheader("Gyroscope (°/s)")
     st.line_chart(df.reindex(columns=["gyro_z_dps", "gyro_z_raw_dps"]))
     st.subheader("Applied motor commands (%)")
     st.line_chart(df[["Left command (%)", "Right command (%)"]])
+    st.subheader("Controller inputs (%)")
+    st.line_chart(df[["Base speed (%)", "Steering correction (%)"]])
 
 time.sleep(1)
 st.rerun()

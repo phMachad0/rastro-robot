@@ -60,6 +60,8 @@ void publishDemoSample(uint32_t nowMs)
     const float steering = 0.22f * sinf(t * 0.8f);
     sample.motorLeft = 0.55f - steering;
     sample.motorRight = 0.55f + steering;
+    sample.baseSpeed = 0.55f;
+    sample.steeringAction = steering;
     sample.motorsArmed = true;
     robotTelemetrySetSample(sample);
 }

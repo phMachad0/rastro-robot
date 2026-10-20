@@ -45,6 +45,7 @@ são enviados na frequência `cfg::TELEMETRY_HZ` (atualmente 20 Hz):
 | `imu` | `gyro_z_raw_dps` | Taxa angular do eixo Z com remoção de bias, antes do filtro do firmware |
 | `motors` | `left_applied`, `right_applied` | Comandos normalizados com sinal, após ajuste de equilíbrio entre os lados (trim) e saturação, exibidos como porcentagens |
 | `motors` | `armed` | Estado de habilitação do driver |
+| `control` | `base_speed`, `steering_action` | Velocidade base e correção diferencial solicitadas pelo controlador, normalizadas antes da mistura nos motores |
 
 O grupo `imu` inteiro é enviado como `null` se a inicialização ou calibração falhar,
 ou se nenhuma amostra do MPU chegar dentro de `cfg::IMU_TIMEOUT_MS`. Corrija

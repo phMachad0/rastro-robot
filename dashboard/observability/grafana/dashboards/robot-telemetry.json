@@ -1,0 +1,1407 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 8,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"line_detected\") |> group() |> count()",
+          "refId": "A"
+        }
+      ],
+      "title": "Telemetry samples",
+      "type": "stat",
+      "description": "Count of received telemetry samples in the selected time range, including samples where the line is not detected."
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 9,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"line_detected\") |> map(fn: (r) => ({r with _value: if r._value then 1.0 else 0.0})) |> group() |> mean() |> map(fn: (r) => ({r with _value: r._value * 100.0}))",
+          "refId": "A"
+        }
+      ],
+      "title": "Line detected",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 10,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"imu_available\") |> map(fn: (r) => ({r with _value: if r._value then 1.0 else 0.0})) |> group() |> mean() |> map(fn: (r) => ({r with _value: r._value * 100.0}))",
+          "refId": "A"
+        }
+      ],
+      "title": "IMU available",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "hertz"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "id": 11,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"control_hz\") |> group() |> mean()",
+          "refId": "A"
+        }
+      ],
+      "title": "Average control rate",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "max": 5000,
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"line_position\")",
+          "refId": "A"
+        }
+      ],
+      "title": "Line position (sensor-relative)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "max": 4095,
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field =~ /^ir_raw_[0-5]$/)",
+          "refId": "A"
+        }
+      ],
+      "title": "IR sensor history (ADC)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "unit": "degreespersecond"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and (r._field == \"gyro_z_dps\" or r._field == \"gyro_z_raw_dps\"))",
+          "refId": "A"
+        }
+      ],
+      "title": "Gyroscope yaw rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "max": 100,
+          "min": -100,
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and (r._field == \"motor_left_applied\" or r._field == \"motor_right_applied\")) |> map(fn: (r) => ({r with _value: r._value * 100.0}))",
+          "refId": "A"
+        }
+      ],
+      "title": "Applied motor commands",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "min": 0,
+          "unit": "hertz"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and (r._field == \"control_hz\" or r._field == \"ir_sample_hz\" or r._field == \"imu_sample_hz\"))",
+          "refId": "A"
+        }
+      ],
+      "title": "Sample rates",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "max": 100,
+          "min": -100,
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and (r._field == \"base_speed\" or r._field == \"steering_action\")) |> map(fn: (r) => ({r with _value: r._value * 100.0}))",
+          "refId": "A"
+        }
+      ],
+      "title": "Controller inputs",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 63
+      },
+      "id": 7,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_session_events\" and r.session_id =~ /^${session:regex}$/) |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\") |> keep(columns: [\"_time\", \"session_id\", \"event_type\", \"label\"]) |> sort(columns: [\"_time\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "Session boundaries",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "description": "Latest value in the selected session and time range.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "background"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "Unavailable"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "Available"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 0,
+        "y": 28
+      },
+      "id": 12,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"line_available\") |> map(fn: (r) => ({r with _value: if r._value then 1.0 else 0.0})) |> group() |> last() |> keep(columns: [\"_time\", \"_value\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "Line sensors",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "description": "Latest IMU availability in the selected session and time range.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "background"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "Unavailable"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "Available"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 5,
+        "y": 28
+      },
+      "id": 13,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"imu_available\") |> map(fn: (r) => ({r with _value: if r._value then 1.0 else 0.0})) |> group() |> last() |> keep(columns: [\"_time\", \"_value\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "IMU",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "description": "Latest control availability in the selected session and time range.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "background"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "Unavailable"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "Available"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 10,
+        "y": 28
+      },
+      "id": 14,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"control_available\") |> map(fn: (r) => ({r with _value: if r._value then 1.0 else 0.0})) |> group() |> last() |> keep(columns: [\"_time\", \"_value\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "Control",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "description": "Latest motor armed state in the selected session and time range.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "background"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "color": "gray",
+                  "index": 1,
+                  "text": "Disarmed"
+                },
+                "1": {
+                  "color": "blue",
+                  "index": 0,
+                  "text": "Armed"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 15,
+        "y": 28
+      },
+      "id": 15,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"motor_armed\") |> map(fn: (r) => ({r with _value: if r._value then 1.0 else 0.0})) |> group() |> last() |> keep(columns: [\"_time\", \"_value\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "Motors",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "description": "Latest line detection state in the selected session and time range.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "background"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "color": "orange",
+                  "index": 1,
+                  "text": "Not detected"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "Detected"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 28
+      },
+      "id": 16,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"line_detected\") |> map(fn: (r) => ({r with _value: if r._value then 1.0 else 0.0})) |> group() |> last() |> keep(columns: [\"_time\", \"_value\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "Line state",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "description": "Standard deviation of recorded sensor-relative line position. Lower values mean a steadier sensor-relative position; this is not physical path variation.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 0,
+        "y": 35
+      },
+      "id": 17,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"line_position\") |> stddev()",
+          "refId": "A"
+        }
+      ],
+      "title": "Line position variability (\u03c3)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "description": "Root mean square of corrected gyro yaw rate in the selected session and time range.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "degreespersecond",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 5,
+        "y": 35
+      },
+      "id": 18,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "import \"math\"\nfrom(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"gyro_z_dps\") |> map(fn: (r) => ({r with _value: r._value * r._value})) |> mean() |> map(fn: (r) => ({r with _value: math.sqrt(x: r._value)}))",
+          "refId": "A"
+        }
+      ],
+      "title": "Yaw rate RMS",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "description": "Maximum absolute corrected gyro yaw rate in the selected session and time range.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "degreespersecond",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 10,
+        "y": 35
+      },
+      "id": 19,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "import \"math\"\nfrom(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"gyro_z_dps\") |> map(fn: (r) => ({r with _value: math.abs(x: r._value)})) |> max()",
+          "refId": "A"
+        }
+      ],
+      "title": "Peak |yaw rate|",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "description": "Mean absolute difference between left and right motor commands, expressed as a percentage of full command.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 15,
+        "y": 35
+      },
+      "id": 20,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and (r._field == \"motor_left_applied\" or r._field == \"motor_right_applied\")) |> group() |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\") |> filter(fn: (r) => exists r.motor_left_applied and exists r.motor_right_applied) |> map(fn: (r) => ({r with _value: if r.motor_left_applied > r.motor_right_applied then r.motor_left_applied - r.motor_right_applied else r.motor_right_applied - r.motor_left_applied})) |> mean() |> map(fn: (r) => ({r with _value: r._value * 100.0}))",
+          "refId": "A"
+        }
+      ],
+      "title": "Mean motor imbalance",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "description": "Share of recorded motor command values at or above 95% magnitude. This indicates command saturation, not measured wheel effort.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 35
+      },
+      "id": 21,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "import \"math\"\nfrom(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and (r._field == \"motor_left_applied\" or r._field == \"motor_right_applied\")) |> map(fn: (r) => ({r with _value: if math.abs(x: r._value) >= 0.95 then 1.0 else 0.0})) |> mean() |> map(fn: (r) => ({r with _value: r._value * 100.0}))",
+          "refId": "A"
+        }
+      ],
+      "title": "Motor command near saturation",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "description": "State history for the selected session and time range. Boolean states use active/inactive labels; mode and fault retain their recorded values. Timestamps are collector receipt times. Line-loss episode rows provide start context and duration for correlation with the numeric plots above.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "color": "gray",
+                  "index": 0,
+                  "text": "Inactive"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 1,
+                  "text": "Active"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      },
+      "id": 22,
+      "options": {
+        "alignValue": "center",
+        "legend": {
+          "showLegend": false
+        },
+        "mergeValues": true,
+        "rowHeight": 0.9,
+        "showValue": "auto",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"line_detected\") |> map(fn: (r) => ({r with _field: \"Line detected\", _value: if r._value then 1.0 else 0.0})) |> keep(columns: [\"_time\", \"_field\", \"_value\"]) |> group(columns: [\"_field\"]) |> sort(columns: [\"_time\"])",
+          "refId": "A"
+        },
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"line_available\") |> map(fn: (r) => ({r with _field: \"Line sensors available\", _value: if r._value then 1.0 else 0.0})) |> keep(columns: [\"_time\", \"_field\", \"_value\"]) |> group(columns: [\"_field\"]) |> sort(columns: [\"_time\"])",
+          "refId": "B"
+        },
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"imu_available\") |> map(fn: (r) => ({r with _field: \"IMU available\", _value: if r._value then 1.0 else 0.0})) |> keep(columns: [\"_time\", \"_field\", \"_value\"]) |> group(columns: [\"_field\"]) |> sort(columns: [\"_time\"])",
+          "refId": "C"
+        },
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"control_available\") |> map(fn: (r) => ({r with _field: \"Control available\", _value: if r._value then 1.0 else 0.0})) |> keep(columns: [\"_time\", \"_field\", \"_value\"]) |> group(columns: [\"_field\"]) |> sort(columns: [\"_time\"])",
+          "refId": "D"
+        },
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"motor_armed\") |> map(fn: (r) => ({r with _field: \"Motors armed\", _value: if r._value then 1.0 else 0.0})) |> keep(columns: [\"_time\", \"_field\", \"_value\"]) |> group(columns: [\"_field\"]) |> sort(columns: [\"_time\"])",
+          "refId": "E"
+        },
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"control_hz\") |> map(fn: (r) => ({r with _field: \"Robot mode\", _value: r.mode})) |> keep(columns: [\"_time\", \"_field\", \"_value\"]) |> group(columns: [\"_field\"]) |> sort(columns: [\"_time\"])",
+          "refId": "F"
+        },
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"control_hz\") |> map(fn: (r) => ({r with _field: \"Fault\", _value: r.fault})) |> keep(columns: [\"_time\", \"_field\", \"_value\"]) |> group(columns: [\"_field\"]) |> sort(columns: [\"_time\"])",
+          "refId": "G"
+        }
+      ],
+      "title": "State changes",
+      "type": "state-timeline"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
+      "id": 23,
+      "options": {
+        "mode": "markdown",
+        "content": "### Session profile\nSummary statistics for the selected session and time range. Includes received samples, scheduled-slot coverage, line-loss episode count, and estimated total observed loss time. Use the time picker at the top right to choose the window; the refresh menu can be set to **Pause** while inspecting a run."
+      },
+      "title": "",
+      "type": "text"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "description": "Count of scheduled telemetry slots not present between received samples in the selected time range. A sequence reset after reboot is not counted as missing slots.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 0,
+        "y": 39
+      },
+      "id": 24,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"device_sequence\") |> group(columns: [\"device\", \"source\", \"session_id\"]) |> sort(columns: [\"_time\"]) |> difference() |> map(fn: (r) => ({r with _value: if r._value > 1 then r._value - 1 else 0})) |> sum()",
+          "refId": "A"
+        }
+      ],
+      "title": "Missing telemetry slots",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "description": "Largest positive interval between received device uptime values. Intervals spanning a device reboot are excluded.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 5,
+        "y": 39
+      },
+      "id": 25,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"device_uptime_ms\") |> group(columns: [\"device\", \"source\", \"session_id\"]) |> sort(columns: [\"_time\"]) |> difference() |> filter(fn: (r) => r._value > 0) |> max() |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000.0}))",
+          "refId": "A"
+        }
+      ],
+      "title": "Largest device sample gap",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "description": "One row per observed line-loss episode. Duration uses device uptime when both edges have it, otherwise collector receipt time. Start and recovery are bounded by telemetry sampling and message gaps; unresolved rows have no confirmed recovery.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 54
+      },
+      "id": 26,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_line_loss_events\" and r.session_id =~ /^${session:regex}$/) |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\") |> keep(columns: [\"_time\", \"session_id\", \"source\", \"status\", \"start_basis\", \"loss_duration_ms\", \"duration_source\", \"recovered_at\", \"open_observation_interval_ms\", \"start_mode\", \"start_fault\", \"start_gyro_z_dps\", \"start_motor_left_applied\", \"start_motor_right_applied\", \"recovery_mode\", \"recovery_fault\", \"recovery_gyro_z_dps\", \"recovery_motor_left_applied\", \"recovery_motor_right_applied\"]) |> sort(columns: [\"_time\"], desc: true)",
+          "refId": "A"
+        }
+      ],
+      "title": "Line loss episodes",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "description": "Observed line-loss episodes in the selected session and time range, including episodes still open or unresolved at session end.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 10,
+        "y": 39
+      },
+      "id": 27,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_line_loss_events\" and r.session_id =~ /^${session:regex}$/ and r._field == \"status\") |> group() |> count()",
+          "refId": "A"
+        }
+      ],
+      "title": "Line-loss episodes",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "description": "Recovered durations plus observed intervals for losses unresolved at session end. Estimates are bounded by sample cadence and message gaps; an active open episode has no confirmed duration yet.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 15,
+        "y": 39
+      },
+      "id": 28,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_line_loss_events\" and r.session_id =~ /^${session:regex}$/ and (r._field == \"status\" or r._field == \"loss_duration_ms\" or r._field == \"open_observation_interval_ms\")) |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\") |> map(fn: (r) => ({r with _value: if r.status == \"recovered\" then r.loss_duration_ms else r.open_observation_interval_ms})) |> group() |> sum() |> map(fn: (r) => ({r with _value: float(v: r._value) / 1000.0}))",
+          "refId": "A"
+        }
+      ],
+      "title": "Observed line-loss time",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "robot-influx"
+      },
+      "description": "Received scheduled telemetry slots as a percentage of inferred slots between samples in the selected time range. Slots before the first observed sample and across a device reboot are not inferable.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 39
+      },
+      "id": 29,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"device_sequence\") |> group(columns: [\"device\", \"source\", \"session_id\"]) |> sort(columns: [\"_time\"]) |> reduce(identity: {received: 0.0, missing: 0.0, last: -1.0}, fn: (r, accumulator) => ({received: accumulator.received + 1.0, missing: accumulator.missing + (if accumulator.last >= 0.0 and float(v: r._value) > accumulator.last + 1.0 then float(v: r._value) - accumulator.last - 1.0 else 0.0), last: float(v: r._value)})) |> map(fn: (r) => ({r with _value: if r.received + r.missing > 0.0 then r.received / (r.received + r.missing) * 100.0 else 0.0})) |> group() |> mean(column: \"_value\")",
+          "refId": "A"
+        }
+      ],
+      "title": "Telemetry slot coverage",
+      "type": "stat"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 41,
+  "tags": [
+    "rastro-robot",
+    "mqtt"
+  ],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "influxdb",
+          "uid": "robot-influx"
+        },
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"robot-telemetry\", tag: \"session_id\", predicate: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\", start: -24h)",
+        "includeAll": true,
+        "label": "Session",
+        "name": "session",
+        "options": [],
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"robot-telemetry\", tag: \"session_id\", predicate: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\", start: -24h)",
+        "refresh": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Rastro Robot telemetry",
+  "uid": "rastro-telemetry",
+  "version": 4
+}

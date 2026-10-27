@@ -302,8 +302,7 @@ Três fontes, todas com ISR mínima (`IRAM_ATTR`, sem alocação, sem `Serial`, 
    que o teste atual usa.
 
 3. **`BTN_START` (GPIO 13) — borda de descida com debounce por timestamp na ISR.**
-   *Atualmente não compilada:* `FEATURE_AUTOSTART` está ligada e o robô parte sozinho.
-   O código segue no lugar, atrás da flag.
+   Compilada apenas com `FEATURE_AUTOSTART` desligada (o padrão atual).
    `xQueueSendFromISR(qCommands, CMD_TOGGLE_RUN)`. Serve para armar/desarmar o robô
    sem depender do Wi-Fi.
 
@@ -522,7 +521,7 @@ stateDiagram-v2
     FAULT --> IDLE: CMD_RESET
 ```
 
-> ⚠️ **`FEATURE_AUTOSTART` está ligada.** O robô sai de `IDLE` para `RUNNING` sozinho,
+> ⚠️ **Com `FEATURE_AUTOSTART` ligada** (hoje o padrão é desligada) o robô sai de `IDLE` para `RUNNING` sozinho,
 > `AUTOSTART_DELAY_MS` após ficar pronto, e a ISR do botão não é compilada. Do energizar
 > ao arrancar são ~5,5 s: ~2,5 s de estimativa de bias do giroscópio mais os 3 s de
 > contagem. O atraso é contado da entrada em `IDLE`, e não do boot, porque contado do
@@ -980,7 +979,7 @@ Ordem pensada para que cada etapa seja testável sozinha antes da seguinte depen
       resolve para uma função que pode não estar em IRAM, e chamá-la de dentro de uma ISR
       trava a placa se a flash estiver ocupada — o que passa a acontecer de fato quando a
       etapa 6 gravar em NVS.
-    - **`FEATURE_AUTOSTART`**, ligada por ora: o robô arranca sozinho 3 s depois de
+    - **`FEATURE_AUTOSTART`**, desligada por ora (partida pelo botão ou pelo dashboard); se ligada, o robô arranca sozinho 3 s depois de
       ficar pronto e a lógica do botão sai do binário. Um interruptor único em vez de
       duas flags, porque os dois modos são mutuamente exclusivos na prática — ou o robô
       espera comando, ou não espera.

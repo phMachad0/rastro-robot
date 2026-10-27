@@ -48,6 +48,11 @@
   inline void appSetup() { testWifiSetup(); }
   inline void appLoop()  { testWifiLoop();  }
 
+#elif defined(APP_TARGET_TEST_TELEMETRY)
+  #include "test/test_telemetry.h"
+  inline void appSetup() { testTelemetrySetup(); }
+  inline void appLoop()  { testTelemetryLoop();  }
+
 #elif defined(APP_TARGET_TEST_CONTROL)
   #include "test/test_control.h"
   inline void appSetup() { testControlSetup(); }

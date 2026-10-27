@@ -71,7 +71,7 @@
  *          impeça isso: o único jeito de parar é desligar a alimentação.
  */
 #ifndef FEATURE_AUTOSTART
-#define FEATURE_AUTOSTART 1
+#define FEATURE_AUTOSTART 0
 #endif
 
 /**
@@ -82,6 +82,17 @@
  */
 #ifndef FEATURE_TELEMETRY
 #define FEATURE_TELEMETRY 1
+#endif
+
+/** Telemetry transport: exactly one backend is compiled into the firmware. */
+#define TELEMETRY_BACKEND_TELEPLOT 0
+#define TELEMETRY_BACKEND_WIFI_MQTT 1
+#ifndef FEATURE_TELEMETRY_BACKEND
+#define FEATURE_TELEMETRY_BACKEND TELEMETRY_BACKEND_WIFI_MQTT
+#endif
+#if FEATURE_TELEMETRY_BACKEND != TELEMETRY_BACKEND_TELEPLOT && \
+    FEATURE_TELEMETRY_BACKEND != TELEMETRY_BACKEND_WIFI_MQTT
+#error "FEATURE_TELEMETRY_BACKEND must select TELEMETRY_BACKEND_TELEPLOT or TELEMETRY_BACKEND_WIFI_MQTT"
 #endif
 
 #endif  // CONFIG_FEATURES_H_

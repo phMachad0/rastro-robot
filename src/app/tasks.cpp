@@ -19,6 +19,7 @@
 #include "hal/motor_driver.h"
 #include "hal/status_led.h"
 #include "test/teleplot.h"
+#include "net/robot_telemetry.h"
 
 namespace {
 
@@ -238,6 +239,7 @@ void taskLineSensor(void*)
 
       for (uint8_t i = 0; i < pins::IR_CHANNEL_COUNT; i++) {
          state.raw[i] = g_ir.raw(i);
+         state.on_line[i] = g_ir.onLine(i);
       }
 
       state.sample_hz = rate.hz();
@@ -417,6 +419,13 @@ void taskSupervisor(void*)
  */
 void taskTelemetry(void*)
 {
+#if FEATURE_TELEMETRY_BACKEND == TELEMETRY_BACKEND_WIFI_MQTT
+   robotTelemetrySetCommandHandler([](const char* cmd) {
+      if (strcmp(cmd, "start") == 0) postCommand(Command::START);
+      else if (strcmp(cmd, "stop") == 0) postCommand(Command::STOP);
+   });
+   robotTelemetrySetup();
+#endif
    TickType_t last_wake = xTaskGetTickCount();
    RobotMode last_mode = RobotMode::BOOT;
    bool first = true;
@@ -430,9 +439,9 @@ void taskTelemetry(void*)
       ImuState imu = {};
 
       const bool have_robot = readRobotState(&robot);
-      readControlState(&control);
-      readLineState(&line);
-      readImuState(&imu);
+      const bool have_control = readControlState(&control);
+      const bool have_line = readLineState(&line);
+      const bool have_imu = readImuState(&imu);
 
       /* Mudança de estado vai como texto no log, não como série: é evento
          discreto e o que se quer é o histórico legível. */
@@ -448,6 +457,7 @@ void taskTelemetry(void*)
          first = false;
       }
 
+#if FEATURE_TELEMETRY_BACKEND == TELEMETRY_BACKEND_TELEPLOT
       teleplot::send("mode", (int32_t)robot.mode);
       teleplot::send("modeMs", (int32_t)robot.mode_elapsed_ms);
       teleplot::send("laps", (int32_t)robot.lap_count);
@@ -486,6 +496,52 @@ void taskTelemetry(void*)
       teleplot::send("haveImu", (int32_t)(control.have_imu ? 1 : 0));
 
       teleplot::send("heap", (int32_t)ESP.getFreeHeap());
+#else
+      RobotTelemetrySample sample;
+      const uint32_t sampleNowMs = millis();
+      const bool lineFresh = have_line &&
+         (uint32_t)(sampleNowMs - line.timestamp_ms) <= cfg::CONTROL_PERIOD_MS * 3;
+      const bool imuFresh = have_imu &&
+         (uint32_t)(sampleNowMs - imu.timestamp_ms) <= cfg::IMU_TIMEOUT_MS;
+      const bool controlFresh = have_control &&
+         (uint32_t)(sampleNowMs - control.timestamp_ms) <= cfg::CONTROL_PERIOD_MS * 3;
+
+      sample.robotMode = have_robot ? Supervisor::modeName(robot.mode) : "UNKNOWN";
+      sample.robotFault = have_robot ? Supervisor::faultName(robot.fault) : "UNKNOWN";
+      sample.lineAvailable = lineFresh;
+      sample.imuAvailable = imuFresh && g_imu_status == ImuInitStatus::READY;
+      sample.controlAvailable = controlFresh;
+      sample.controlHz = controlFresh ? control.loop_hz : 0.0f;
+      sample.lineSampleHz = lineFresh ? line.sample_hz : 0.0f;
+      sample.imuSampleHz = sample.imuAvailable ? imu.measured_rate_hz : 0.0f;
+      switch (g_imu_status) {
+         case ImuInitStatus::PENDING:     sample.imuStatus = "PENDING"; break;
+         case ImuInitStatus::CALIBRATING: sample.imuStatus = "CALIBRATING"; break;
+         case ImuInitStatus::READY:       sample.imuStatus = "READY"; break;
+         case ImuInitStatus::FAILED:      sample.imuStatus = "FAILED"; break;
+      }
+      for (uint8_t i = 0; i < pins::IR_CHANNEL_COUNT; ++i) {
+         sample.irRaw[i] = line.raw[i];
+         sample.irOnLine[i] = line.on_line[i];
+      }
+      sample.lineDetected = lineFresh && line.line_detected;
+      sample.linePosition = line.position;
+      sample.imuValid = sample.imuAvailable;
+      if (sample.imuValid) {
+         sample.accelX = imu.accel_x;
+         sample.accelY = imu.accel_y;
+         sample.accelZ = imu.accel_z;
+         sample.gyroZ = imu.yaw_rate;
+         sample.gyroZRaw = imu.yaw_rate_raw;
+      }
+      sample.motorLeft = control.left;
+      sample.motorRight = control.right;
+      sample.baseSpeed = controlFresh ? control.base_speed : 0.0f;
+      sample.steeringAction = controlFresh ? control.action : 0.0f;
+      sample.motorsArmed = control.motors_armed;
+      robotTelemetrySetSample(sample);
+      robotTelemetryLoop();
+#endif
    }
 }
 #endif

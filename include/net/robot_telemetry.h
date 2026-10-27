@@ -30,8 +30,12 @@ struct RobotTelemetrySample {
     bool motorsArmed = false;
 };
 
+using RobotCommandHandler = void (*)(const char* command);
+
 // Inicializa uma única vez, antes das tarefas de aquisição e rede, com a serial pronta.
 void robotTelemetrySetup();
+// Registra o callback para comandos MQTT recebidos pela tarefa de telemetria.
+void robotTelemetrySetCommandHandler(RobotCommandHandler handler);
 // Chamar apenas na tarefa de rede: a conexão MQTT pode bloquear.
 void robotTelemetryLoop();
 // Fila da última amostra, segura entre tarefas; a aquisição nunca espera pela rede.

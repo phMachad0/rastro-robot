@@ -71,7 +71,7 @@
  *          impeça isso: o único jeito de parar é desligar a alimentação.
  */
 #ifndef FEATURE_AUTOSTART
-#define FEATURE_AUTOSTART 1
+#define FEATURE_AUTOSTART 0
 #endif
 
 /**

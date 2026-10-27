@@ -8,7 +8,7 @@ import streamlit as st
 import paho.mqtt.client as mqtt
 import altair as alt
 
-from config import BROKER, PORT, TOPIC
+from config import BROKER, COMMAND_TOPIC, PORT, TOPIC
 
 
 st.set_page_config(
@@ -53,6 +53,9 @@ class MQTTTelemetry:
         except (json.JSONDecodeError, UnicodeDecodeError):
             print("Received invalid JSON")
 
+    def send_command(self, cmd):
+        self.client.publish(COMMAND_TOPIC, cmd, qos=1)
+
     def get_data(self):
         with self.lock:
             current = self.telemetry.copy()
@@ -74,6 +77,22 @@ if mqtt_data.connected:
     st.success("MQTT connected")
 else:
     st.error("MQTT disconnected")
+
+def on_switch():
+    mqtt_data.send_command("start" if st.session_state.run_switch else "stop")
+
+
+mode = current.get("robot", {}).get("mode")
+# Assigning session state in code does not fire on_change, so this only syncs the display.
+st.session_state.run_switch = mode == "RUNNING"
+switch_col, mode_col = st.columns([1, 5])
+switch_col.toggle(
+    "Robot",
+    key="run_switch",
+    on_change=on_switch,
+    disabled=mode not in ("IDLE", "RUNNING"),
+)
+mode_col.caption(f"Mode: {mode or 'no telemetry'}")
 
 if not current:
     st.warning("Waiting for telemetry...")

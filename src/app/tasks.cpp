@@ -420,6 +420,10 @@ void taskSupervisor(void*)
 void taskTelemetry(void*)
 {
 #if FEATURE_TELEMETRY_BACKEND == TELEMETRY_BACKEND_WIFI_MQTT
+   robotTelemetrySetCommandHandler([](const char* cmd) {
+      if (strcmp(cmd, "start") == 0) postCommand(Command::START);
+      else if (strcmp(cmd, "stop") == 0) postCommand(Command::STOP);
+   });
    robotTelemetrySetup();
 #endif
    TickType_t last_wake = xTaskGetTickCount();

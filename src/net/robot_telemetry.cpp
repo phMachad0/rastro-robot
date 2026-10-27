@@ -37,6 +37,7 @@ bool previousMqttConnected = false;
 bool bufferReady = false;
 QueueHandle_t samples = nullptr;
 constexpr size_t PAYLOAD_SIZE = 1024;
+RobotCommandHandler commandHandler = nullptr;
 
 void updateMqttConnection() {
     if (WiFi.status() != WL_CONNECTED) {
@@ -63,7 +64,18 @@ void updateMqttConnection() {
     if (!mqttClient.connect(clientId.c_str())) {
         Serial.print("[MQTT] Connection failed, state=");
         Serial.println(mqttClient.state());
+        return;
     }
+    // A assinatura se perde a cada reconexão.
+    mqttClient.subscribe(MQTT_TOPIC_COMMAND, 1);
+}
+
+void onMqttMessage(char*, uint8_t* payload, unsigned int length) {
+    char cmd[16];
+    if (!commandHandler || length >= sizeof(cmd)) return;
+    memcpy(cmd, payload, length);
+    cmd[length] = '\0';
+    commandHandler(cmd);
 }
 
 void updateConnectionDebug() {
@@ -147,12 +159,17 @@ void robotTelemetrySetup() {
     previousMqttConnected = false;
     mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
     mqttClient.setSocketTimeout(1);
+    mqttClient.setCallback(onMqttMessage);
     // Reserva espaço para o cabeçalho MQTT, o tamanho do tópico, o tópico e o JSON completo.
     bufferReady = mqttClient.setBufferSize(5 + 2 + sizeof(MQTT_TOPIC_TELEMETRY) + PAYLOAD_SIZE);
     if (!bufferReady) Serial.println("[MQTT] Buffer allocation failed");
     wifiConnectionSetup();
     lastMqttAttemptMs = millis() - MQTT_RETRY_INTERVAL_MS;
     lastTelemetryMs = millis();
+}
+
+void robotTelemetrySetCommandHandler(RobotCommandHandler handler) {
+    commandHandler = handler;
 }
 
 void robotTelemetrySetSample(const RobotTelemetrySample& sample) {

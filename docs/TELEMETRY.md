@@ -100,3 +100,10 @@ reais obtidos pelas tarefas de sensores e controle.
 - Confirmar que os comandos dos motores permanecem em zero com o driver desarmado.
 - Parar e reiniciar o broker: a aquisição deve continuar, e as leituras atuais devem
   voltar a aparecer após a reconexão. Envios locais com QoS 0 não garantem entrega.
+
+## Comandos
+
+O dashboard publica em `robot/command` (QoS 1, sem retain) o texto `start` ou `stop`;
+o firmware assina o tópico e repassa ao supervisor. Qualquer outro texto é ignorado.
+Com `FEATURE_AUTOSTART` desligada, o robô espera em `IDLE` até receber `start`
+(dashboard ou botão).

@@ -103,7 +103,9 @@ reais obtidos pelas tarefas de sensores e controle.
 
 ## Comandos
 
-O dashboard publica em `robot/command` (QoS 1, sem retain) o texto `start` ou `stop`;
-o firmware assina o tópico e repassa ao supervisor. Qualquer outro texto é ignorado.
-Com `FEATURE_AUTOSTART` desligada, o robô espera em `IDLE` até receber `start`
-(dashboard ou botão).
+O dashboard publica em `robot/command` (QoS 1, sem retain) o texto `start`, `stop`
+ou `reset`; o firmware assina o tópico e repassa os comandos reconhecidos ao
+supervisor. Qualquer outro texto é ignorado. O botão Robot envia `reset` seguido
+de `start` quando a telemetria mostra `FAULT`, permitindo reiniciar após recolocar
+o robô na linha. Com `FEATURE_AUTOSTART` desligada, o robô espera em `IDLE` até
+receber `start` (dashboard ou botão).

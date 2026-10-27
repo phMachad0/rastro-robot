@@ -423,6 +423,7 @@ void taskTelemetry(void*)
    robotTelemetrySetCommandHandler([](const char* cmd) {
       if (strcmp(cmd, "start") == 0) postCommand(Command::START);
       else if (strcmp(cmd, "stop") == 0) postCommand(Command::STOP);
+      else if (strcmp(cmd, "reset") == 0) postCommand(Command::RESET);
    });
    robotTelemetrySetup();
 #endif

@@ -226,9 +226,9 @@ The first query lists fields seen in the last 24 hours; the second shows up to
 
 ## Storage and shutdown
 
-InfluxDB starts with a 24-hour bucket retention. The compose services have
-memory limits totaling 1.75 GiB. Measure actual disk use after a representative
-run before increasing retention.
+InfluxDB uses a two-week (336-hour) bucket retention. The compose services have
+memory limits totaling 1.75 GiB. The six lab sessions remain subject to this
+retention window, so records older than two weeks are deleted automatically.
 
 Stop services and keep recorded data:
 

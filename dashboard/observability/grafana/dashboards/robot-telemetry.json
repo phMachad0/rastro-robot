@@ -18,7 +18,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 6,
+        "w": 12,
         "x": 0,
         "y": 0
       },
@@ -62,8 +62,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 6,
+        "w": 12,
+        "x": 12,
         "y": 0
       },
       "id": 9,
@@ -97,140 +97,6 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 100
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 0
-      },
-      "id": 10,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"imu_available\") |> map(fn: (r) => ({r with _value: if r._value then 1.0 else 0.0})) |> group() |> mean() |> map(fn: (r) => ({r with _value: r._value * 100.0}))",
-          "refId": "A"
-        }
-      ],
-      "title": "IMU available",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "robot-influx"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "hertz"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 0
-      },
-      "id": 11,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"control_hz\") |> group() |> mean()",
-          "refId": "A"
-        }
-      ],
-      "title": "Average control rate",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "robot-influx"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "spanNulls": false,
-            "showPoints": "never"
-          },
-          "max": 5000,
-          "min": 0,
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 4
-      },
-      "id": 1,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and r._field == \"line_position\")",
-          "refId": "A"
-        }
-      ],
-      "title": "Line position (sensor-relative)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "robot-influx"
-      },
-      "fieldConfig": {
-        "defaults": {
           "color": {
             "mode": "palette-classic"
           },
@@ -250,7 +116,7 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
+        "x": 0,
         "y": 4
       },
       "id": 2,
@@ -298,8 +164,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 12
+        "x": 12,
+        "y": 4
       },
       "id": 3,
       "options": {
@@ -348,7 +214,7 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
+        "x": 0,
         "y": 12
       },
       "id": 4,
@@ -389,55 +255,6 @@
             "spanNulls": false,
             "showPoints": "never"
           },
-          "min": 0,
-          "unit": "hertz"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 20
-      },
-      "id": 5,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/ and (r._field == \"control_hz\" or r._field == \"ir_sample_hz\" or r._field == \"imu_sample_hz\"))",
-          "refId": "A"
-        }
-      ],
-      "title": "Sample rates",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "robot-influx"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "spanNulls": false,
-            "showPoints": "never"
-          },
           "max": 100,
           "min": -100,
           "unit": "percent"
@@ -448,7 +265,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 20
+        "y": 12
       },
       "id": 6,
       "options": {
@@ -484,7 +301,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 63
+        "y": 53
       },
       "id": 7,
       "options": {
@@ -535,7 +352,7 @@
         "h": 4,
         "w": 5,
         "x": 0,
-        "y": 28
+        "y": 20
       },
       "id": 12,
       "options": {
@@ -596,7 +413,7 @@
         "h": 4,
         "w": 5,
         "x": 5,
-        "y": 28
+        "y": 20
       },
       "id": 13,
       "options": {
@@ -657,7 +474,7 @@
         "h": 4,
         "w": 5,
         "x": 10,
-        "y": 28
+        "y": 20
       },
       "id": 14,
       "options": {
@@ -718,7 +535,7 @@
         "h": 4,
         "w": 5,
         "x": 15,
-        "y": 28
+        "y": 20
       },
       "id": 15,
       "options": {
@@ -779,7 +596,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 28
+        "y": 20
       },
       "id": 16,
       "options": {
@@ -822,7 +639,7 @@
         "h": 4,
         "w": 5,
         "x": 0,
-        "y": 35
+        "y": 26
       },
       "id": 17,
       "options": {
@@ -865,7 +682,7 @@
         "h": 4,
         "w": 5,
         "x": 5,
-        "y": 35
+        "y": 26
       },
       "id": 18,
       "options": {
@@ -908,7 +725,7 @@
         "h": 4,
         "w": 5,
         "x": 10,
-        "y": 35
+        "y": 26
       },
       "id": 19,
       "options": {
@@ -951,7 +768,7 @@
         "h": 4,
         "w": 5,
         "x": 15,
-        "y": 35
+        "y": 26
       },
       "id": 20,
       "options": {
@@ -994,7 +811,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 35
+        "y": 26
       },
       "id": 21,
       "options": {
@@ -1052,7 +869,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 35
       },
       "id": 22,
       "options": {
@@ -1110,7 +927,7 @@
         "h": 2,
         "w": 24,
         "x": 0,
-        "y": 33
+        "y": 24
       },
       "id": 23,
       "options": {
@@ -1137,7 +954,7 @@
         "h": 4,
         "w": 5,
         "x": 0,
-        "y": 39
+        "y": 30
       },
       "id": 24,
       "options": {
@@ -1180,7 +997,7 @@
         "h": 4,
         "w": 5,
         "x": 5,
-        "y": 39
+        "y": 30
       },
       "id": 25,
       "options": {
@@ -1220,7 +1037,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 54
+        "y": 45
       },
       "id": 26,
       "options": {
@@ -1253,7 +1070,7 @@
         "h": 4,
         "w": 5,
         "x": 10,
-        "y": 39
+        "y": 30
       },
       "id": 27,
       "options": {
@@ -1296,7 +1113,7 @@
         "h": 4,
         "w": 5,
         "x": 15,
-        "y": 39
+        "y": 30
       },
       "id": 28,
       "options": {
@@ -1339,7 +1156,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 39
+        "y": 30
       },
       "id": 29,
       "options": {
@@ -1403,5 +1220,5 @@
   "timezone": "browser",
   "title": "Rastro Robot telemetry",
   "uid": "rastro-telemetry",
-  "version": 4
+  "version": 20
 }

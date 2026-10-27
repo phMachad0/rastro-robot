@@ -1,29 +1,43 @@
 /**
  * @file test_wifi.cpp
  *
- * @brief Marcador do teste de rede. Implementação na etapa 5.
+ * @brief Testa conexão e reconexão Wi-Fi, com IP e RSSI na serial.
  *
- * Exercitará conexão em modo STA, fallback para modo AP, mDNS e um WebSocket
- * emitindo telemetria sintética — tudo antes de haver dados reais para enviar,
- * de forma que problemas de rede não se confundam com problemas de controle.
- *
- * Ver docs/ARQUITETURA.md, seções 7 e 11.
+ * Reporta sucesso ao conectar e continua monitorando quedas e recuperação.
+ * Ambiente: `pio run -e test_wifi -t upload`.
  */
 
 #include "test/test_wifi.h"
-
 #include <Arduino.h>
-
+#include <WiFi.h>
 #include "config/robot_config.h"
+#include "net/wifi_connection.h"
 
-void testWifiSetup()
-{
-   Serial.begin(cfg::SERIAL_BAUD);
-   Serial.println();
-   Serial.println("test_wifi: nao implementado. Chega na etapa 5 do roteiro.");
+namespace {
+unsigned long lastReportMs = 0;
+bool passed = false;
 }
 
-void testWifiLoop()
-{
-   delay(1000);
+void testWifiSetup() {
+    Serial.begin(cfg::SERIAL_BAUD);
+    Serial.println("\n=== Wi-Fi connection smoke test ===");
+    wifiConnectionSetup();
+    lastReportMs = millis();
+    passed = false;
+}
+
+void testWifiLoop() {
+    wifiConnectionLoop();
+    if (!wifiConnectionConnected()) {
+        passed = false;
+    } else if (!passed) {
+        Serial.println("[PASS] Wi-Fi connected. Disable/re-enable the AP to test recovery.");
+        passed = true;
+    }
+    if (millis() - lastReportMs >= 5000) {
+        lastReportMs = millis();
+        Serial.printf("wifi_connected:%d\trssi:%d\n", wifiConnectionConnected(),
+                      wifiConnectionConnected() ? WiFi.RSSI() : 0);
+    }
+    delay(1);
 }

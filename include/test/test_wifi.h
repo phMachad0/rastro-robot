@@ -1,9 +1,9 @@
 /**
  * @file test_wifi.h
  *
- * @brief Rotina de teste da conectividade Wi-Fi e do canal de telemetria.
+ * @brief Pontos de entrada do teste de conexão e reconexão Wi-Fi STA.
  *
- * Ambiente: `pio run -e test_wifi -t upload`
+ * Ambiente: `pio run -e test_wifi -t upload`.
  */
 
 #ifndef TEST_TEST_WIFI_H_

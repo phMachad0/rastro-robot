@@ -1,0 +1,53 @@
+{
+  "annotations": { "list": [] },
+  "description": "Inspect timestamped telemetry rows and start/end markers for one robot session.",
+  "editable": true,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "datasource": { "type": "influxdb", "uid": "robot-influx" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "targets": [{ "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\" and r.session_id =~ /^${session:regex}$/) |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\") |> sort(columns: [\"_time\"], desc: true) |> limit(n: 500)", "refId": "A" }],
+      "title": "Telemetry samples (latest 500 in range)",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "robot-influx" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 14 },
+      "id": 2,
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "targets": [{ "query": "from(bucket: \"robot-telemetry\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"robot_session_events\" and r.session_id =~ /^${session:regex}$/) |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\") |> keep(columns: [\"_time\", \"session_id\", \"event_type\", \"label\"]) |> sort(columns: [\"_time\"])", "refId": "A" }],
+      "title": "Session markers and label",
+      "type": "table"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 41,
+  "tags": ["rastro-robot", "mqtt", "session"],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "influxdb", "uid": "robot-influx" },
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"robot-telemetry\", tag: \"session_id\", predicate: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\", start: -24h)",
+        "includeAll": true,
+        "label": "Session",
+        "name": "session",
+        "options": [],
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"robot-telemetry\", tag: \"session_id\", predicate: (r) => r._measurement == \"robot_telemetry\" and r.session_id != \"unassigned\", start: -24h)",
+        "refresh": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-15m", "to": "now" },
+  "timezone": "browser",
+  "title": "Rastro Robot session inspector",
+  "uid": "rastro-session-inspector",
+  "version": 1
+}

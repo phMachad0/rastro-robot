@@ -1,18 +1,23 @@
+/**
+ * @file main.cpp
+ *
+ * @brief Ponto de entrada único.
+ *
+ * Toda a escolha de qual rotina rodar acontece em entry_points.h, a partir da
+ * flag APP_TARGET_* que o ambiente do PlatformIO define. Este arquivo não deve
+ * crescer.
+ */
+
 #include <Arduino.h>
-#include "TestLed.h"
-#include "TestMotors.h"
-#include "TestI2C.h"
+
+#include "app/entry_points.h"
 
 void setup()
 {
-  // testLedSetup();
-  // testMotorsSetup();
-  testI2CSetup();
+   appSetup();
 }
 
 void loop()
 {
-  // testLedLoop();
-  // testMotorsLoop();
-  testI2CLoop();
+   appLoop();
 }

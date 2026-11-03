@@ -33,6 +33,7 @@ constexpr unsigned long MQTT_RETRY_INTERVAL_MS = 3000;
 unsigned long lastTelemetryMs = 0;
 unsigned long lastMqttAttemptMs = 0;
 unsigned long publishedCount = 0;
+uint32_t telemetrySequence = 0;
 bool previousMqttConnected = false;
 bool bufferReady = false;
 QueueHandle_t samples = nullptr;
@@ -93,6 +94,10 @@ void updateConnectionDebug() {
 }
 
 void publishTelemetry() {
+    // Count every scheduled telemetry slot, including slots missed while Wi-Fi
+    // or MQTT is unavailable. The next received message then exposes the gap.
+    const uint32_t sequence = ++telemetrySequence;
+    const uint32_t uptimeMs = millis();
     const bool wifiConnected = wifiConnectionConnected();
     const bool mqttConnected = wifiConnected && mqttClient.connected();
     if (!mqttConnected || !bufferReady) return;
@@ -102,6 +107,8 @@ void publishTelemetry() {
     if (!samples || xQueueReceive(samples, &telemetry, 0) != pdTRUE) return;
     JsonDocument doc;
     doc["source"] = telemetry.synthetic ? "synthetic" : "live";
+    doc["device"]["uptime_ms"] = uptimeMs;
+    doc["device"]["sequence"] = sequence;
     doc["robot"]["mode"] = telemetry.robotMode;
     doc["robot"]["fault"] = telemetry.robotFault;
     doc["health"]["line_available"] = telemetry.lineAvailable;
@@ -156,6 +163,7 @@ void robotTelemetrySetup() {
     samples = xQueueCreate(1, sizeof(RobotTelemetrySample));
     if (!samples) Serial.println("[Telemetry] Snapshot mailbox allocation failed");
     publishedCount = 0;
+    telemetrySequence = 0;
     previousMqttConnected = false;
     mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
     mqttClient.setSocketTimeout(1);

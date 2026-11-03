@@ -78,11 +78,19 @@ if mqtt_data.connected:
 else:
     st.error("MQTT disconnected")
 
-def on_switch():
-    mqtt_data.send_command("start" if st.session_state.run_switch else "stop")
-
-
 mode = current.get("robot", {}).get("mode")
+
+def on_switch():
+    if st.session_state.run_switch:
+        if mode == "FAULT":
+            # Commands share one ordered MQTT topic. The firmware queues both,
+            # so the supervisor processes RESET before START.
+            mqtt_data.send_command("reset")
+        mqtt_data.send_command("start")
+    else:
+        mqtt_data.send_command("stop")
+
+
 # Assigning session state in code does not fire on_change, so this only syncs the display.
 st.session_state.run_switch = mode == "RUNNING"
 switch_col, mode_col = st.columns([1, 5])
@@ -90,7 +98,7 @@ switch_col.toggle(
     "Robot",
     key="run_switch",
     on_change=on_switch,
-    disabled=mode not in ("IDLE", "RUNNING"),
+    disabled=mode not in ("IDLE", "RUNNING", "FAULT"),
 )
 mode_col.caption(f"Mode: {mode or 'no telemetry'}")
 
